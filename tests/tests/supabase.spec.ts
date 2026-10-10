@@ -1,39 +1,31 @@
-import { test, expect } from '@playwright/test';
-import { supabase } from '../../src/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+import { expect, test } from '@playwright/test';
+import type { Database } from '../../src/types/database.types';
+import { E2E_EMAIL, E2E_PASSWORD, skipUnlessRealAuth } from '../support/e2e';
 
-test.describe('Supabase Integration', () => {
-    test('debe conectar a Supabase e insertar/leer con UUIDs e integridad referencial', async () => {
-        const testCategoryName = `Test Category ${Date.now()}`;
-        
-        // 1. Insert category
-        const { data: category, error: catError } = await supabase
-            .from('categories')
-            .insert({ name: testCategoryName })
-            .select()
-            .single();
-            
-        expect(catError).toBeNull();
-        expect(category).toBeDefined();
-        expect(category!.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-        
-        // 2. Insert product with category foreign key
-        const testProductName = `Test Product ${Date.now()}`;
-        const { data: product, error: prodError } = await supabase
-            .from('products')
-            .insert({
-                name: testProductName,
-                category_id: category!.id,
-                type: 'unit'
-            })
-            .select()
-            .single();
-            
-        expect(prodError).toBeNull();
-        expect(product).toBeDefined();
-        expect(product!.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-        expect(product!.category_id).toBe(category!.id);
-        
-        // 3. Clean up
-        await supabase.from('categories').delete().eq('id', category!.id);
-    });
+const url = process.env.VITE_SUPABASE_URL ?? '';
+const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+test.describe('RLS real — matriz no mutante', () => {
+  test('anon no puede leer tablas públicas después del cutover', async () => {
+    test.skip(!url || !anonKey, 'Requiere VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
+    const anonymous = createClient<Database>(url, anonKey, { auth: { persistSession: false } });
+    const { error } = await anonymous.from('products').select('id').limit(1);
+    expect(error, 'anon todavía puede consultar products; falta aplicar la migración 005').not.toBeNull();
+  });
+
+  test('authenticated puede leer las nueve tablas', async ({ request }, testInfo) => {
+    void request;
+    skipUnlessRealAuth(testInfo);
+    test.skip(!url || !anonKey, 'Requiere configuración Supabase.');
+    const client = createClient<Database>(url, anonKey, { auth: { persistSession: false } });
+    const { error: authError } = await client.auth.signInWithPassword({ email: E2E_EMAIL, password: E2E_PASSWORD });
+    expect(authError).toBeNull();
+    const tables = ['categories', 'suppliers', 'products', 'product_presentations', 'sales', 'sale_items', 'purchases', 'purchase_items', 'inventory_movements'] as const;
+    for (const table of tables) {
+      const { error } = await client.from(table).select('*', { head: true, count: 'exact' });
+      expect(error, `authenticated no pudo leer ${table}`).toBeNull();
+    }
+    await client.auth.signOut();
+  });
 });

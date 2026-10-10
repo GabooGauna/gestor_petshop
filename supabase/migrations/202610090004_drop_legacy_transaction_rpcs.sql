@@ -1,0 +1,15 @@
+drop function if exists public.process_sale(numeric,numeric,text,jsonb);
+drop function if exists public.process_purchase(uuid,numeric,text,jsonb);
+
+alter table public.sale_items validate constraint sale_items_sale_mode_check;
+alter table public.sale_items validate constraint sale_items_commercial_quantity_positive_check;
+alter table public.sale_items validate constraint sale_items_quantity_positive_check;
+alter table public.sale_items validate constraint sale_items_money_nonnegative_check;
+alter table public.purchase_items validate constraint purchase_items_values_check;
+alter table public.sales validate constraint sales_totals_nonnegative_check;
+alter table public.purchases validate constraint purchases_total_nonnegative_check;
+alter table public.product_presentations validate constraint product_presentations_values_check;
+alter table public.inventory_movements validate constraint inventory_movements_quantity_nonzero_check;
+alter table public.inventory_movements validate constraint inventory_movements_sign_check;
+alter table public.inventory_movements validate constraint inventory_movements_reference_check;
+alter table public.inventory_movements validate constraint inventory_movements_shrinkage_reason_check;

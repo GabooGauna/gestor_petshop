@@ -18,3 +18,13 @@ Sistema web de gestión de inventario, ventas y rentabilidad diseñado para un n
 ## 4. Tipos de Datos Críticos
 - Moneda/Dinero: `NUMERIC(12, 2)`
 - Stock/Pesos (Kg): `NUMERIC(10, 3)`
+
+## 5. Organización de la documentación
+
+- `.antigravity/PRD.md`: requisitos funcionales del producto.
+- `.antigravity/RULES.md`: reglas globales de arquitectura, precisión y UX.
+- `.antigravity/stages/`: alcance funcional de cada etapa; describe **qué** se debe entregar.
+- `.agents/workflows/`: procedimiento de cada etapa; describe **cómo y en qué orden** trabajan los agentes.
+- `.agents/skills/frontend-design/SKILL.md`: sistema visual y criterios de interfaz de PetStock.
+
+El archivo de stage y su workflow homónimo se leen juntos. El workflow no modifica el alcance del stage y las pruebas E2E de Playwright se ejecutan después de implementar la interfaz.

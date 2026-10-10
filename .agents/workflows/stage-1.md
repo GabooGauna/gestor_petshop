@@ -23,17 +23,20 @@ description:
    - Violación de decimales (debe usar NUMERIC/DECIMAL, nunca FLOAT).
    - Uso de `any` en TypeScript.
 2. Si encuentra errores, SE LO DEVUELVE al Backend con las correcciones.
-3. Si el código es correcto, INVOCA AUTOMÁTICAMENTE al Agente Tester.
+3. Si el código es correcto, INVOCA AUTOMÁTICAMENTE al Agente Frontend.
 
 ---
 
-## ROL 4: [Tester]
-1. Ejecuta el test de sanidad básico para comprobar que el entorno responde:
-   `npx playwright test tests/health-check.spec.ts`
-2. Verifica que el cliente de Supabase conecte correctamente y las tablas acepten UUIDs e integridad referencial.
+## PASO 4: Rol [Frontend]
+1. Construye la interfaz en React + Tailwind v4 consumiendo los servicios aprobados por el Reviewer.
+2. Invoca al Agente Tester cuando la interfaz esté implementada.
 
 ---
 
-## PASO 5: Rol [Frontend]
-1. Construye la interfaz en React + Tailwind v4 consumiendo los servicios aprobados por el Tester y Reviewer.
-2. Presenta el resultado final al usuario.
+## PASO 5: Rol [Tester]
+1. Ejecuta el test de sanidad básico con la interfaz disponible:
+   `npx playwright test tests/tests/health-check.spec.ts`
+2. Ejecuta la integración de Supabase:
+   `npx playwright test tests/tests/supabase.spec.ts`
+3. Verifica que el cliente de Supabase conecte correctamente y las tablas acepten UUIDs e integridad referencial.
+4. Presenta el resultado final al usuario.

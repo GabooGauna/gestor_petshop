@@ -1,295 +1,146 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, Calculator, Plus, ShoppingCart, Trash2 } from 'lucide-react';
 import { productService } from '../services/productService';
-import { saleService, saleCalculations } from '../services/saleService';
-import { supabase } from '../lib/supabase';
-import { ShoppingCart, Calculator, Trash2, Plus, ArrowLeft } from 'lucide-react';
+import { saleCalculations, saleService, type SaleItemPayload, type SaleMode } from '../services/saleService';
+import type { Database } from '../types/database.types';
 
-export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => void, onCancel?: () => void }) {
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  
-  // Sale Items
-  const [saleItems, setSaleItems] = useState<any[]>([]);
-  
-  // Current Item Input State
-  const [productId, setProductId] = useState('');
-  const [presentationId, setPresentationId] = useState('');
-  const [saleMode, setSaleMode] = useState<'amount' | 'quantity'>('amount');
-  
-  const [inputValue, setInputValue] = useState('');
-  
-  useEffect(() => {
-    productService.getProducts().then(data => setProducts(data || []));
-  }, []);
+type Product = Database['public']['Tables']['products']['Row'] & { product_presentations: Database['public']['Tables']['product_presentations']['Row'][] };
+type PaymentMethod = 'efectivo' | 'transferencia' | 'debito' | 'credito' | 'mercado_pago' | 'otro';
+interface TicketItem { presentationId: string; productName: string; presentationName: string; mode: SaleMode; input: string; quantity: number; subtotal: number; cost: number; }
+const MODES: Array<{ id: SaleMode; label: string }> = [{ id: 'unit', label: 'Por unidad' }, { id: 'weight', label: 'Por peso' }, { id: 'amount', label: 'Por importe' }, { id: 'package', label: 'Bolsa completa' }];
+const PAYMENTS: Array<{ id: PaymentMethod; label: string }> = [{ id: 'efectivo', label: 'Efectivo' }, { id: 'transferencia', label: 'Transferencia' }, { id: 'debito', label: 'Débito' }, { id: 'credito', label: 'Crédito' }, { id: 'mercado_pago', label: 'Mercado Pago' }, { id: 'otro', label: 'Otro' }];
+function isValidModeInput(mode: SaleMode, input: string): boolean {
+  if (mode === 'amount') return /^[0-9]+(?:\.[0-9]{1,2})?$/.test(input) && Number(input) > 0;
+  if (mode === 'unit' || mode === 'package') return /^[0-9]+$/.test(input) && Number(input) > 0;
+  return /^[0-9]+(?:\.[0-9]{1,3})?$/.test(input) && Number(input) > 0;
+}
+function normalizeMoney(input: string): `${number}` {
+  const [whole, fraction = ''] = input.split('.');
+  return `${whole}.${fraction.padEnd(2, '0')}` as `${number}`;
+}
+function formatStockQuantity(quantity: number, mode: SaleMode): string {
+  return mode === 'unit' ? `${Math.round(quantity)} u` : `${quantity.toFixed(3)} kg`;
+}
 
-  const selectedProduct = products.find(p => p.id === productId);
-  const presentations = selectedProduct?.product_presentations || [];
-  const selectedPresentation = presentations.find((p: any) => p.id === presentationId);
-  
-  // Use price_per_kg for weight-based products (fractional sales), fall back to price for unit sales
-  const isWeightProduct = selectedProduct?.type === 'weight';
-  const rawPrice = isWeightProduct
-    ? (selectedPresentation?.price_per_kg ?? selectedPresentation?.price ?? 0)
-    : (selectedPresentation?.price ?? 0);
-  const effectivePrice = Number(rawPrice) || 0;
-  const cost = Number(selectedPresentation?.cost) || 0;
-  // Soft warning only — never blocks input
-  const priceIsZero = !!selectedPresentation && effectivePrice === 0;
-  
-  // Real-time calculation based on input
-  const calculated = useMemo(() => {
-    if (!effectivePrice || !inputValue || isNaN(Number(inputValue))) {
-      return { quantity: 0, amount: 0, profit: 0 };
-    }
-    const val = Number(inputValue);
-    
-    let q = 0;
-    let a = 0;
-    
-    if (saleMode === 'amount') {
-      a = val;
-      q = saleCalculations.calculateQuantityByAmount(val, effectivePrice);
-    } else {
-      q = val;
-      a = saleCalculations.calculateAmountByQuantity(val, effectivePrice);
-    }
-    
-    const profit = saleCalculations.calculateGrossProfit(a, q, cost);
-    return { quantity: q, amount: a, profit };
-  }, [inputValue, saleMode, effectivePrice, cost]);
-
-  const handleAddItem = () => {
-    if (!productId || !presentationId || calculated.amount <= 0 || calculated.quantity <= 0) return;
-    
-    setSaleItems([...saleItems, {
-      product_id: productId,
-      presentation_id: presentationId,
-      product_name: selectedProduct.name,
-      presentation_name: selectedPresentation.name,
-      quantity: calculated.quantity,
-      unit_price: effectivePrice,
-      subtotal: calculated.amount,
-      cost: cost,
-      profit: calculated.profit
-    }]);
-    
-    // Reset current item
-    setProductId('');
-    setPresentationId('');
-    setInputValue('');
+export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => void; onCancel?: () => void }) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [items, setItems] = useState<TicketItem[]>([]);
+  const [productId, setProductId] = useState(''); const [presentationId, setPresentationId] = useState('');
+  const [mode, setMode] = useState<SaleMode>('amount'); const [input, setInput] = useState('');
+  const [payment, setPayment] = useState<PaymentMethod>('efectivo'); const [loading, setLoading] = useState(false); const [error, setError] = useState<string | null>(null);
+  useEffect(() => { void productService.getProducts().then(data => setProducts(((data ?? []) as Product[]).filter(value => value.status === 'active'))); }, []);
+  const product = products.find(value => value.id === productId); const presentations = product?.product_presentations ?? [];
+  const presentation = presentations.find(value => value.id === presentationId);
+  const preview = (() => {
+    const value = Number(input) || 0; if (!presentation || value <= 0) return { quantity: 0, subtotal: 0, cost: 0 };
+    const kgPrice = Number(presentation.price_per_kg) || 0; const price = Number(presentation.price) || 0; const cost = Number(presentation.cost) || 0; const kg = Number(presentation.weight_kg) || 0;
+    if (mode === 'amount') { const quantity = saleCalculations.calculateQuantityByAmount(value, kgPrice); return { quantity, subtotal: value, cost: kg ? quantity * cost / kg : 0 }; }
+    if (mode === 'weight') return { quantity: value, subtotal: saleCalculations.calculateAmountByQuantity(value, kgPrice), cost: kg ? value * cost / kg : 0 };
+    if (mode === 'package') return { quantity: value * kg, subtotal: saleCalculations.calculateAmountByQuantity(value, price), cost: value * cost };
+    return { quantity: value, subtotal: saleCalculations.calculateAmountByQuantity(value, price), cost: value * cost };
+  })();
+  const addItem = () => {
+    setError(null);
+    if (!isValidModeInput(mode, input)) { setError(mode === 'weight' ? 'El peso admite hasta 3 decimales.' : mode === 'amount' ? 'Ingresá un importe positivo.' : 'La cantidad debe ser un número entero positivo.'); return; }
+    if (!product || !presentation || preview.quantity <= 0 || preview.subtotal <= 0) return;
+    if (items.some(item => item.presentationId === presentation.id)) { setError('Esa presentación ya está en el ticket. Quitala para cambiar su modalidad o cantidad.'); return; }
+    setItems(current => [...current, { presentationId: presentation.id, productName: product.name, presentationName: presentation.name, mode, input, ...preview }]);
+    setProductId(''); setPresentationId(''); setInput('');
   };
-
-  const handleRemoveItem = (index: number) => {
-    setSaleItems(saleItems.filter((_, i) => i !== index));
+  const totals = items.reduce((sum, item) => ({ amount: sum.amount + item.subtotal, cost: sum.cost + item.cost }), { amount: 0, cost: 0 });
+  const processSale = async () => {
+    setLoading(true); setError(null);
+    try { const payload: SaleItemPayload[] = items.map(item => {
+      const numericInput = Number(item.input);
+      if (!isValidModeInput(item.mode, item.input) || !Number.isFinite(numericInput)) throw new Error('El ticket contiene una cantidad con formato inválido.');
+      return item.mode === 'amount'
+        ? { presentation_id: item.presentationId, mode: 'amount', amount: normalizeMoney(item.input) }
+        : { presentation_id: item.presentationId, mode: item.mode, quantity: item.input as `${number}` };
+    }); await saleService.processSale(payment, payload); setItems([]); onSaleComplete?.(); }
+    catch (caught: unknown) { setError(caught instanceof Error ? caught.message : 'No se pudo procesar la venta.'); } finally { setLoading(false); }
   };
-
-  const totals = saleItems.reduce((acc, item) => ({
-    amount: acc.amount + item.subtotal,
-    cost: acc.cost + (item.quantity * item.cost),
-    profit: acc.profit + item.profit
-  }), { amount: 0, cost: 0, profit: 0 });
-
-  const handleProcessSale = async () => {
-    if (saleItems.length === 0) return;
-    
-    setLoading(true);
-    try {
-      await saleService.processSale(
-        totals.amount,
-        totals.cost,
-        'Efectivo', // Hardcoded for now
-        saleItems.map(i => ({
-          product_id: i.product_id,
-          presentation_id: i.presentation_id,
-          quantity: i.quantity,
-          unit_price: i.unit_price,
-          subtotal: i.subtotal,
-          cost: i.cost
-        }))
-      );
-      
-      setSaleItems([]);
-      if (onSaleComplete) onSaleComplete();
-      alert('Venta procesada exitosamente');
-    } catch (error: any) {
-      console.error(error);
-      alert('Error al procesar la venta: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  const inputLabel = mode === 'amount' ? 'Importe a cobrar' : mode === 'package' ? 'Cantidad de bolsas' : mode === 'unit' ? 'Cantidad de unidades' : 'Cantidad a entregar (kg)';
+  const inputPlaceholder = mode === 'amount' ? 'Ej.: $ 3.000' : mode === 'package' ? 'Ej.: 1 bolsa' : mode === 'unit' ? 'Ej.: 1 unidad' : 'Ej.: 2,500 kg';
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 w-full flex flex-col h-full">
-      <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {onCancel && (
-            <button onClick={onCancel} className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          )}
-          <h2 className="text-xl font-bold text-slate-800">Punto de Venta</h2>
+    <div className="flex min-h-full w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full">
+      <header className="flex items-center gap-3 border-b border-slate-100 p-4 sm:p-6">
+        {onCancel && <button onClick={onCancel} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></button>}
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Punto de venta</h2>
+          <p className="text-xs text-slate-500">El servidor calcula precios, costos y stock definitivo</p>
         </div>
-      </div>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 flex-1">
-        {/* Panel Izquierdo: Selección */}
-        <div className="lg:col-span-7 p-6 border-r border-slate-100 flex flex-col gap-6">
-          
-          <div className="bg-slate-50 p-1.5 rounded-lg inline-flex w-full">
-            <button
-              type="button"
-              onClick={() => { setSaleMode('amount'); setInputValue(''); }}
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${saleMode === 'amount' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              Por Importe ($)
-            </button>
-            <button
-              type="button"
-              onClick={() => { setSaleMode('quantity'); setInputValue(''); }}
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${saleMode === 'quantity' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              Por Cantidad (Kg/Uds)
-            </button>
+      {error && <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:mx-6" role="alert">{error}</div>}
+
+      <div className="grid grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-12">
+        <section className="flex flex-col gap-5 p-4 sm:p-6 lg:col-span-7" data-testid="pos-entry-panel">
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 sm:grid-cols-4">
+            {MODES.map(option => {
+              const incompatible = product ? (product.type === 'weight' ? option.id === 'unit' : option.id !== 'unit') : false;
+              return (
+                <button key={option.id} type="button" disabled={incompatible} onClick={() => { setMode(option.id); setInput(''); }} className={`rounded-md px-2 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:text-slate-300 ${mode === option.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Producto</label>
-              <select 
-                value={productId} onChange={e => { setProductId(e.target.value); setPresentationId(''); }}
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] text-sm"
-              >
-                <option value="">Seleccionar...</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-slate-700">Producto
+              <select value={productId} onChange={e => { const next = products.find(value => value.id === e.target.value); setProductId(e.target.value); setPresentationId(''); setMode(next?.type === 'weight' ? 'amount' : 'unit'); setInput(''); }} className="mt-1.5 w-full rounded-lg border border-slate-200 p-2.5">
+                <option value="">Seleccionar…</option>{products.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}
               </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Presentación</label>
-              <select 
-                value={presentationId} onChange={e => setPresentationId(e.target.value)}
-                disabled={!productId}
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] text-sm disabled:bg-slate-50"
-              >
-                <option value="">Seleccionar...</option>
-                {presentations.map((p: any) => {
-                  const displayPrice = selectedProduct?.type === 'weight'
-                    ? (p.price_per_kg || p.price)
-                    : p.price;
-                  return <option key={p.id} value={p.id}>{p.name} (${displayPrice}/kg)</option>;
-                })}
-              </select>
-            </div>
-          </div>
-
-          <div className="bg-blue-50/50 p-6 rounded-xl border border-blue-100">
-            <label className="block text-sm font-medium text-blue-900 mb-2">
-              {saleMode === 'amount' ? 'Importe a cobrar ($)' : 'Cantidad a entregar (Kg/Uds)'}
             </label>
+            <label className="text-sm font-medium text-slate-700">Presentación
+              <select value={presentationId} onChange={e => setPresentationId(e.target.value)} disabled={!productId} className="mt-1.5 w-full rounded-lg border border-slate-200 p-2.5 disabled:bg-slate-50">
+                <option value="">Seleccionar…</option>{presentations.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}
+              </select>
+            </label>
+          </div>
 
-            {priceIsZero && (
-              <div className="mb-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg flex items-center gap-2" data-testid="price-zero-warning">
-                <span>⚠</span>
-                Precio de venta en $0. Configurá el precio en la presentación para que el cálculo sea correcto.
-              </div>
-            )}
-
-            <div className="relative mb-4">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 font-bold text-xl">
-                {saleMode === 'amount' ? '$' : ''}
-              </span>
-              <input 
-                type="number" step="0.01" min="0"
-                value={inputValue} onChange={e => setInputValue(e.target.value)}
-                data-testid="pos-input-value"
-                className={`w-full p-4 ${saleMode === 'amount' ? 'pl-9' : 'pl-4'} text-2xl font-bold border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] text-blue-900 bg-white`}
-                placeholder="0.00"
-              />
-            </div>
-
-            {inputValue && Number(inputValue) > 0 && selectedPresentation && (
-              <div className="bg-white p-4 rounded-lg border border-blue-100 flex justify-between items-center shadow-sm" data-testid="pos-calculation-result">
-                <div className="flex items-center gap-2 text-blue-700">
-                  <Calculator className="w-5 h-5" />
-                  <span className="font-medium text-sm">
-                    {saleMode === 'amount' ? 'Cantidad a entregar:' : 'Importe a cobrar:'}
-                  </span>
-                </div>
-                <span className="text-xl font-bold text-green-600" data-testid="pos-calculated-value">
-                  {saleMode === 'amount' 
-                    ? `${calculated.quantity.toLocaleString('es-AR', {minimumFractionDigits: 3})} kg` 
-                    : `$${calculated.amount.toLocaleString('es-AR', {minimumFractionDigits: 2})}`}
-                </span>
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 sm:p-5">
+            <label className="text-sm font-medium text-blue-900">{inputLabel}
+              <input type="number" min="0" step={mode === 'amount' ? '0.01' : mode === 'weight' ? '0.001' : '1'} value={input} placeholder={inputPlaceholder} onChange={e => setInput(e.target.value)} className="mt-2 w-full rounded-lg border border-blue-200 bg-white p-4 text-2xl font-bold text-blue-950 outline-none placeholder:text-base placeholder:font-normal placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500" data-testid="pos-input-value" />
+            </label>
+            {presentation && input && (
+              <div className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-blue-100 bg-white p-4 text-sm sm:grid-cols-2" data-testid="pos-calculation-result">
+                <div><span className="text-slate-500">Stock a descontar</span><strong className="block text-lg text-blue-700">{formatStockQuantity(preview.quantity, mode)}</strong></div>
+                <div><span className="text-slate-500">Importe estimado</span><strong className="block text-lg text-emerald-700">${preview.subtotal.toFixed(2)}</strong></div>
+                <div className="flex items-center gap-2 border-t border-slate-100 pt-3 text-slate-600 sm:col-span-2"><Calculator className="h-4 w-4" />Costo estimado: ${preview.cost.toFixed(2)}</div>
               </div>
             )}
           </div>
 
-          <button 
-            type="button"
-            onClick={handleAddItem}
-            disabled={!productId || !presentationId || !inputValue || calculated.amount <= 0}
-            className="w-full bg-[#2563EB] hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Agregar al ticket
-          </button>
-        </div>
+          <button type="button" onClick={addItem} disabled={!presentation || !input || preview.subtotal <= 0} className="flex items-center justify-center gap-2 rounded-xl bg-[#2563EB] px-4 py-3 font-medium text-white disabled:opacity-50"><Plus className="h-5 w-5" />Agregar al ticket</button>
+        </section>
 
-        {/* Panel Derecho: Ticket */}
-        <div className="lg:col-span-5 bg-slate-50 p-6 flex flex-col border-l border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">Ticket de Venta</h3>
-          
-          <div className="flex-1 overflow-y-auto mb-6">
-            {saleItems.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-3">
-                <ShoppingCart className="w-12 h-12 text-slate-300" />
-                <p>El ticket está vacío</p>
+        <section className="flex flex-col border-t border-slate-200 bg-slate-50 p-4 sm:p-6 lg:col-span-5 lg:min-h-0 lg:border-l lg:border-t-0" data-testid="pos-ticket-panel">
+          <h3 className="mb-4 text-lg font-bold text-slate-800">Ticket de venta</h3>
+          <div className="mb-5 min-h-36 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            {items.length === 0 ? (
+              <div className="grid min-h-36 place-items-center text-slate-400 lg:h-full">
+                <div className="text-center"><ShoppingCart className="mx-auto mb-2 h-10 w-10" /><p>El ticket está vacío</p></div>
               </div>
             ) : (
-              <div className="space-y-3">
-                {saleItems.map((item, idx) => (
-                  <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-start shadow-sm">
-                    <div>
-                      <div className="font-semibold text-slate-800 text-sm">{item.product_name}</div>
-                      <div className="text-xs text-slate-500 mb-1">{item.presentation_name} • ${item.unit_price}/kg</div>
-                      <div className="text-xs font-medium text-blue-600">{item.quantity} kg</div>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <div className="font-bold text-slate-800">${item.subtotal.toFixed(2)}</div>
-                      <button onClick={() => handleRemoveItem(idx)} className="text-slate-400 hover:text-red-500 transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <div className="space-y-3">{items.map(item => (
+                <div key={item.presentationId} className="flex justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="min-w-0"><strong className="block truncate text-sm text-slate-800">{item.productName}</strong><p className="text-xs text-slate-500">{item.presentationName} · {MODES.find(value => value.id === item.mode)?.label}</p><p className="text-xs font-medium text-blue-600">{formatStockQuantity(item.quantity, item.mode)}</p></div>
+                  <div className="shrink-0 text-right"><strong>${item.subtotal.toFixed(2)}</strong><button onClick={() => setItems(current => current.filter(value => value.presentationId !== item.presentationId))} className="mt-2 ml-auto block text-slate-400 hover:text-red-500" aria-label={`Quitar ${item.productName}`}><Trash2 className="h-4 w-4" /></button></div>
+                </div>
+              ))}</div>
             )}
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-            <div className="flex justify-between text-slate-500 text-sm">
-              <span>Subtotal</span>
-              <span>${totals.amount.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-green-600 text-sm font-medium">
-              <span>Ganancia Bruta</span>
-              <span>${totals.profit.toFixed(2)}</span>
-            </div>
-            <div className="border-t border-slate-100 pt-3 flex justify-between items-center">
-              <span className="text-lg font-medium text-slate-800">Total a cobrar</span>
-              <span className="text-3xl font-bold text-[#10B981]">${totals.amount.toFixed(2)}</span>
-            </div>
+          <label className="mb-4 text-sm font-medium text-slate-700">Medio de pago
+            <select value={payment} onChange={e => setPayment(e.target.value as PaymentMethod)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-2.5">{PAYMENTS.map(value => <option key={value.id} value={value.id}>{value.label}</option>)}</select>
+          </label>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className="flex justify-between text-sm text-slate-500"><span>Costo estimado</span><span>${totals.cost.toFixed(2)}</span></div>
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3"><span className="text-base text-slate-800 sm:text-lg">Total estimado</span><strong className="text-2xl text-emerald-600 sm:text-3xl">${totals.amount.toFixed(2)}</strong></div>
           </div>
-
-          <button 
-            onClick={handleProcessSale}
-            disabled={saleItems.length === 0 || loading}
-            className="mt-4 w-full bg-[#10B981] hover:bg-[#059669] text-white font-bold py-4 px-4 rounded-xl transition-colors disabled:opacity-50 text-lg shadow-sm"
-          >
-            {loading ? 'Procesando...' : 'Cobrar Ticket'}
-          </button>
-        </div>
+          <button onClick={() => void processSale()} disabled={!items.length || loading} className="mt-4 rounded-xl bg-[#10B981] px-4 py-4 text-lg font-bold text-white hover:bg-[#059669] disabled:opacity-50">{loading ? 'Procesando…' : 'Cobrar ticket'}</button>
+        </section>
       </div>
     </div>
   );

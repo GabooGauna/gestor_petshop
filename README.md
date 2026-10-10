@@ -1,75 +1,32 @@
-# React + TypeScript + Vite
+# PetStock
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sistema de gestión de productos, compras, inventario, ventas y rentabilidad para un negocio de alimentos y accesorios para mascotas.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 19 + TypeScript + Vite
+- Tailwind CSS v4
+- Supabase (PostgreSQL y RPC)
+- Playwright para pruebas E2E
 
-## React Compiler
+## Documentación del proyecto
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Contexto: `.antigravity/PROJECT_CONTEXT.md`
+- Requisitos: `.antigravity/PRD.md`
+- Reglas globales: `.antigravity/RULES.md`
+- Alcance por etapa: `.antigravity/stages/`
+- Procedimiento por etapa: `.agents/workflows/`
+- Guía visual: `.agents/skills/frontend-design/SKILL.md`
 
-## Expanding the ESLint configuration
+Los stages definen **qué** debe incluir cada etapa y los workflows definen **cómo** implementarla. Se leen en conjunto. Las pruebas E2E se ejecutan después de implementar la interfaz correspondiente.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Comandos
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm run dev
+npm run build
+npm run lint
+npx playwright test
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+El stage 5 (dashboard y reportes) permanece pendiente.

@@ -1,15 +1,27 @@
 import { supabase } from '../lib/supabase';
-import type { Database } from '../types/database.types';
+import type { DecimalInput } from './saleService';
 
-type MovementRow = Database['public']['Tables']['inventory_movements']['Row'];
-type MovementInsert = Database['public']['Tables']['inventory_movements']['Insert'];
+export interface StockMutationResult {
+  movement_id: string;
+  product_id: string;
+  presentation_id: string;
+  quantity: DecimalInput;
+  stock_before: DecimalInput;
+  stock_after: DecimalInput;
+}
 
-// Valores aceptados por la CHECK constraint de la BD:
-// CHECK (type = ANY (ARRAY['compra','venta','ajuste','merma']))
-export type MovementType = 'compra' | 'venta' | 'ajuste' | 'merma';
+function isStockMutationResult(value: unknown): value is StockMutationResult {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.movement_id === 'string'
+    && typeof candidate.product_id === 'string'
+    && typeof candidate.presentation_id === 'string'
+    && typeof candidate.quantity === 'string'
+    && typeof candidate.stock_before === 'string'
+    && typeof candidate.stock_after === 'string';
+}
 
 export const inventoryService = {
-  /** Historial global de movimientos con nombre de producto y presentación. */
   async getMovements() {
     const { data, error } = await supabase
       .from('inventory_movements')
@@ -19,106 +31,33 @@ export const inventoryService = {
     return data;
   },
 
-  /** Historial de una presentación específica (Kardex). */
-  async getKardex(presentationId: string): Promise<MovementRow[]> {
-    const { data, error } = await supabase
-      .from('inventory_movements')
-      .select('*')
-      .eq('presentation_id', presentationId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data ?? [];
-  },
-
-  /**
-   * Registra una merma y descuenta el stock.
-   * quantity: valor positivo — se almacena internamente como NEGATIVO.
-   * reason: OBLIGATORIO (regla de negocio).
-   */
   async recordShrinkage(params: {
     presentationId: string;
-    productId: string;
-    quantity: number;
+    quantity: DecimalInput;
     reason: string;
-    currentStock: number;
-  }): Promise<MovementRow> {
-    const { presentationId, productId, quantity, reason, currentStock } = params;
-
-    if (!reason || reason.trim() === '') {
-      throw new Error('El motivo es obligatorio para registrar una merma.');
-    }
-    if (quantity <= 0) {
-      throw new Error('La cantidad de merma debe ser mayor a cero.');
-    }
-    if (quantity > currentStock) {
-      throw new Error(`Stock insuficiente. Stock actual: ${currentStock}.`);
-    }
-
-    // 1. Insertar movimiento con cantidad NEGATIVA y type='merma' (según constraint BD)
-    const { data: movement, error: movErr } = await supabase
-      .from('inventory_movements')
-      .insert({
-        presentation_id: presentationId,
-        product_id: productId,
-        quantity: -Math.abs(quantity),
-        type: 'merma' satisfies MovementType,
-        reason: reason.trim(),
-      } satisfies MovementInsert)
-      .select()
-      .single();
-
-    if (movErr || !movement) throw movErr ?? new Error('Error al insertar la merma.');
-
-    // 2. Actualizar stock (deducción)
-    const { error: stockErr } = await supabase
-      .from('product_presentations')
-      .update({ stock: currentStock - Math.abs(quantity) })
-      .eq('id', presentationId);
-
-    if (stockErr) throw stockErr;
-
-    return movement;
+  }): Promise<StockMutationResult> {
+    const { data, error } = await supabase.rpc('record_shrinkage', {
+      p_presentation_id: params.presentationId,
+      p_quantity: params.quantity,
+      p_reason: params.reason,
+    });
+    if (error) throw error;
+    if (!isStockMutationResult(data)) throw new Error('PETSTOCK_INVALID_SHRINKAGE_RESPONSE');
+    return data;
   },
 
-  /**
-   * Registra un ajuste de inventario (discrepancia física vs sistema).
-   * delta = physicalStock - systemStock (puede ser positivo o negativo).
-   */
   async recordAdjustment(params: {
     presentationId: string;
-    productId: string;
-    physicalStock: number;
-    systemStock: number;
-    reason?: string;
-  }): Promise<MovementRow> {
-    const { presentationId, productId, physicalStock, systemStock, reason } = params;
-
-    const delta = physicalStock - systemStock;
-    const autoReason = `Ajuste: físico ${physicalStock} vs sistema ${systemStock}`;
-
-    // 1. Insertar movimiento con el delta real y type='ajuste' (según constraint BD)
-    const { data: movement, error: movErr } = await supabase
-      .from('inventory_movements')
-      .insert({
-        presentation_id: presentationId,
-        product_id: productId,
-        quantity: delta,
-        type: 'ajuste' satisfies MovementType,
-        reason: reason?.trim() || autoReason,
-      } satisfies MovementInsert)
-      .select()
-      .single();
-
-    if (movErr || !movement) throw movErr ?? new Error('Error al insertar el ajuste.');
-
-    // 2. Establecer el stock al valor físico real
-    const { error: stockErr } = await supabase
-      .from('product_presentations')
-      .update({ stock: physicalStock })
-      .eq('id', presentationId);
-
-    if (stockErr) throw stockErr;
-
-    return movement;
+    physicalStock: DecimalInput;
+    reason: string;
+  }): Promise<StockMutationResult> {
+    const { data, error } = await supabase.rpc('record_stock_adjustment', {
+      p_presentation_id: params.presentationId,
+      p_physical_stock: params.physicalStock,
+      p_reason: params.reason,
+    });
+    if (error) throw error;
+    if (!isStockMutationResult(data)) throw new Error('PETSTOCK_INVALID_ADJUSTMENT_RESPONSE');
+    return data;
   },
 };

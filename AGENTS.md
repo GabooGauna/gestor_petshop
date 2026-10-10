@@ -1,5 +1,23 @@
 # Definición de Agentes del Sistema
 
+## Fuentes de trabajo
+
+- `.antigravity/PROJECT_CONTEXT.md`, `.antigravity/PRD.md` y `.antigravity/RULES.md` definen el contexto, los requisitos y las reglas globales.
+- `.antigravity/stages/` define **qué incluye** cada etapa (alcance funcional).
+- `.agents/workflows/` define **cómo se ejecuta** la etapa correspondiente (roles, orden y verificaciones).
+- Ambas carpetas son complementarias: el workflow no reemplaza ni amplía el alcance del stage. Ante una diferencia, se debe corregir la documentación antes de implementar.
+- La guía visual de PetStock está en `.agents/skills/frontend-design/SKILL.md`.
+
+## Orden de ejecución por etapa
+
+1. Orquestador: contratos, arquitectura y SQL.
+2. Backend: servicios, funciones y migraciones.
+3. Reviewer: revisión de precisión, seguridad y tipos.
+4. Frontend: implementación de la interfaz sobre contratos revisados.
+5. Tester: creación/actualización y ejecución de las pruebas E2E con la interfaz ya implementada.
+
+Las comprobaciones unitarias o de integración del backend pueden realizarse antes, pero las pruebas E2E de Playwright se ejecutan al final porque validan la interfaz completa.
+
 ## 1. Agente Orquestador (Arquitecto)
 - **Rol:** Diseña esquemas de base de datos, arquitectura de la solución y especificaciones técnicas.
 - **Restricción:** No escribe código de aplicación. Entrega archivos SQL, diagramas y contratos de API.

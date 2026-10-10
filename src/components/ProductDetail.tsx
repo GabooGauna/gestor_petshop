@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { productService } from '../services/productService';
 import type { Database } from '../types/database.types';
-import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Info } from 'lucide-react';
+import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Plus, Layers, Trash2 } from 'lucide-react';
+import Swal from 'sweetalert2';
 
 type PresentationUpdate = Database['public']['Tables']['product_presentations']['Update'];
 
@@ -26,6 +27,7 @@ interface Product {
 interface ProductDetailProps {
   product: Product;
   categoryName: string;
+  categories: Database['public']['Tables']['categories']['Row'][];
   idx: number;
   onUpdated: () => void;
 }
@@ -36,11 +38,14 @@ interface EditState {
   priceBulk: string;    // precio de venta del bulto completo
   cost: string;         // costo del bulto
   margenPct: string;    // margen % extra para venta suelta
-  stock: string;
   weight_kg: string;
-  // precio_por_kg se CALCULA: (priceBulk / weight_kg) * (1 + margenPct/100)
-  // para productos de unidad, se ingresa directamente
   priceUnit: string;    // solo para tipo 'unit'
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message;
+  return fallback;
 }
 
 function calcPricePerKg(priceBulk: number, weightKg: number, margenPct: number): number {
@@ -49,21 +54,32 @@ function calcPricePerKg(priceBulk: number, weightKg: number, margenPct: number):
   return basePorKg * (1 + margenPct / 100);
 }
 
-export function ProductDetail({ product, categoryName, idx, onUpdated }: ProductDetailProps) {
+export function ProductDetail({ product, categoryName, categories, idx, onUpdated }: ProductDetailProps) {
   const [expanded, setExpanded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Estado para crear una nueva presentación inline
+  const [showAddPres, setShowAddPres] = useState(false);
+  const [newPresName, setNewPresName] = useState(product.type === 'weight' ? 'Bolsa 15kg' : 'Unidad');
+  const [newPresWeight, setNewPresWeight] = useState(product.type === 'weight' ? '15' : '');
+  const [newPresCost, setNewPresCost] = useState('');
+  const [newPresPrice, setNewPresPrice] = useState('');
+  const [newPresMargen, setNewPresMargen] = useState('10');
+  const [savingNewPres, setSavingNewPres] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingCategory, setEditingCategory] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState(product.category_id ?? '');
+  const [savingCategory, setSavingCategory] = useState(false);
+
   const isWeightProduct = product.type === 'weight';
+  const presentations = product.product_presentations || [];
 
   const startEdit = (pres: Presentation) => {
     setEditingId(pres.id);
 
-    // Si ya tenía price_per_kg guardado, tratar de inferir el margen
-    // price_per_kg = (price / weight_kg) * (1 + margen/100)
-    // margen = (price_per_kg * weight_kg / price - 1) * 100
-    let inferredMargen = 10; // default 10%
+    let inferredMargen = 10;
     if (isWeightProduct && pres.price_per_kg && pres.price && pres.weight_kg) {
       const base = pres.price / pres.weight_kg;
       const m = ((pres.price_per_kg / base) - 1) * 100;
@@ -75,7 +91,6 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
       priceBulk: pres.price > 0 ? String(pres.price) : '',
       cost: pres.cost > 0 ? String(pres.cost) : '',
       margenPct: String(inferredMargen),
-      stock: String(pres.stock),
       weight_kg: pres.weight_kg != null ? String(pres.weight_kg) : '',
       priceUnit: pres.price > 0 ? String(pres.price) : '',
     });
@@ -92,6 +107,16 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
 
   const saveEdit = async (id: string) => {
     if (!editState) return;
+    if (isWeightProduct && Number(editState.weight_kg) <= 0) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Revisá el peso del bulto',
+        text: 'El peso debe ser mayor que cero. El stock se modifica desde el apartado Inventario.',
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#2563EB',
+      });
+      return;
+    }
     setSaving(true);
     try {
       const priceBulk = Number(editState.priceBulk) || 0;
@@ -105,7 +130,6 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
         name: editState.name,
         price: isWeightProduct ? priceBulk : Number(editState.priceUnit) || 0,
         cost: Number(editState.cost) || 0,
-        stock: Number(editState.stock) || 0,
         ...(isWeightProduct && {
           price_per_kg: pricePerKgCalc || null,
           weight_kg: weightKg || null,
@@ -117,47 +141,170 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
       setEditState(null);
       onUpdated();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error desconocido';
-      alert('Error al guardar: ' + msg);
+      await Swal.fire({ icon: 'error', title: 'No se pudo guardar', text: errorMessage(err, 'Revisá los datos e intentá nuevamente.'), confirmButtonColor: '#2563EB' });
     } finally {
       setSaving(false);
     }
   };
 
-  const presentations = product.product_presentations || [];
-  const hasMissingPrice = presentations.some(p => {
+  const handleCreateNewPresentation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPresName.trim()) return;
+
+    setSavingNewPres(true);
+    try {
+      const costNum = Number(newPresCost) || 0;
+      const priceNum = Number(newPresPrice) || 0;
+      const weightNum = isWeightProduct ? Number(newPresWeight) || 0 : null;
+      const margenNum = Number(newPresMargen) || 0;
+      const pricePerKgCalc = isWeightProduct && weightNum && priceNum
+        ? calcPricePerKg(priceNum, weightNum, margenNum)
+        : null;
+
+      await productService.createPresentation({
+        product_id: product.id,
+        name: newPresName.trim(),
+        cost: costNum,
+        price: priceNum,
+        price_per_kg: pricePerKgCalc,
+        weight_kg: weightNum,
+      });
+
+      setShowAddPres(false);
+      setNewPresCost('');
+      setNewPresPrice('');
+      onUpdated();
+    } catch (err: unknown) {
+      await Swal.fire({ icon: 'error', title: 'No se pudo crear la presentación', text: errorMessage(err, 'Revisá los datos e intentá nuevamente.'), confirmButtonColor: '#2563EB' });
+    } finally {
+      setSavingNewPres(false);
+    }
+  };
+
+  const handleDeleteProduct = async () => {
+    const confirmation = await Swal.fire({
+      icon: 'warning',
+      title: '¿Eliminar este producto?',
+      text: `Se eliminarán “${product.name}”, sus presentaciones, el stock actual y sus movimientos de inventario. Esta acción no se puede deshacer.`,
+      showCancelButton: true,
+      focusCancel: true,
+      reverseButtons: true,
+      confirmButtonText: 'Sí, eliminar producto',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#DC2626',
+      cancelButtonColor: '#64748B',
+    });
+    if (!confirmation.isConfirmed) return;
+    setDeletingId(product.id);
+    try {
+      await productService.deleteProduct(product.id);
+      onUpdated();
+      await Swal.fire({ icon: 'success', title: 'Producto eliminado', text: `“${product.name}” se eliminó correctamente.`, confirmButtonColor: '#2563EB' });
+    } catch (err: unknown) {
+      await Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: errorMessage(err, 'No se pudo eliminar el producto.'), confirmButtonColor: '#2563EB' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDeletePresentation = async (presentation: Presentation) => {
+    const confirmation = await Swal.fire({
+      icon: 'warning',
+      title: '¿Eliminar esta presentación?',
+      text: `Se eliminarán “${presentation.name}”, su stock actual y sus movimientos de inventario. Esta acción no se puede deshacer.`,
+      showCancelButton: true,
+      focusCancel: true,
+      reverseButtons: true,
+      confirmButtonText: 'Sí, eliminar presentación',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#DC2626',
+      cancelButtonColor: '#64748B',
+    });
+    if (!confirmation.isConfirmed) return;
+    setDeletingId(presentation.id);
+    try {
+      await productService.deletePresentation(presentation.id);
+      onUpdated();
+      await Swal.fire({ icon: 'success', title: 'Presentación eliminada', text: `“${presentation.name}” se eliminó correctamente.`, confirmButtonColor: '#2563EB' });
+    } catch (err: unknown) {
+      await Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: errorMessage(err, 'No se pudo eliminar la presentación.'), confirmButtonColor: '#2563EB' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const startCategoryEdit = () => {
+    setCategoryDraft(product.category_id ?? '');
+    setEditingCategory(true);
+  };
+
+  const saveCategory = async () => {
+    if (categoryDraft === (product.category_id ?? '')) {
+      setEditingCategory(false);
+      return;
+    }
+
+    setSavingCategory(true);
+    try {
+      await productService.updateProduct(product.id, { category_id: categoryDraft || null });
+      setEditingCategory(false);
+      onUpdated();
+    } catch (err: unknown) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'No se pudo cambiar la categoría',
+        text: errorMessage(err, 'Revisá la categoría e intentá nuevamente.'),
+        confirmButtonColor: '#2563EB',
+      });
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const hasMissingPrice = presentations.length === 0 || presentations.some(p => {
     const effective = isWeightProduct ? (p.price_per_kg ?? p.price) : p.price;
     return !effective || effective === 0;
   });
 
-  // Preview del cálculo en tiempo real
+  // Preview del cálculo en tiempo real para edición
   const previewPricePerKg: number | null = (() => {
     if (!editState || !isWeightProduct) return null;
     const b = Number(editState.priceBulk);
     const w = Number(editState.weight_kg);
     const m = Number(editState.margenPct);
-    if (!b || !w) return null;
+    if (b <= 0 || w <= 0) return null;
     return calcPricePerKg(b, w, m);
   })();
 
-  // Costo por kg (solo informativo)
   const previewCostPerKg: number | null = (() => {
     if (!editState || !isWeightProduct) return null;
     const c = Number(editState.cost);
     const w = Number(editState.weight_kg);
-    if (!c || !w) return null;
+    if (c <= 0 || w <= 0) return null;
     return c / w;
   })();
 
+  // Preview para nueva presentación
+  const newPresPricePerKgCalc = (() => {
+    if (!isWeightProduct) return null;
+    const b = Number(newPresPrice);
+    const w = Number(newPresWeight);
+    const m = Number(newPresMargen);
+    if (!b || !w) return null;
+    return calcPricePerKg(b, w, m);
+  })();
+
   return (
-    <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors group">
+    <tr className="group block overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300 md:table-row md:rounded-none md:border-x-0 md:border-t-0 md:shadow-none md:hover:bg-slate-50/50">
       {/* Código */}
-      <td className="py-3 px-6 text-slate-500 text-sm align-top pt-4">
-        P{String(idx + 1).padStart(3, '0')}
+      <td className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 text-sm text-slate-500 md:table-cell md:border-b-0 md:px-6 md:py-3 md:pt-4 md:align-top">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Código</span>
+        <span>P{String(idx + 1).padStart(3, '0')}</span>
       </td>
 
       {/* Producto */}
-      <td className="py-3 px-6 align-top pt-4">
+      <td className="px-4 py-3 md:table-cell md:px-6 md:py-3 md:pt-4 md:align-top">
+        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Producto</span>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200 text-slate-500 text-xs font-bold">
             {product.name.charAt(0)}
@@ -167,7 +314,7 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
             {hasMissingPrice && (
               <div className="flex items-center gap-1 text-amber-600 text-xs mt-0.5">
                 <AlertTriangle className="w-3 h-3" />
-                Precio sin configurar
+                {presentations.length === 0 ? 'Sin presentaciones' : 'Precio sin configurar'}
               </div>
             )}
           </div>
@@ -175,22 +322,91 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
       </td>
 
       {/* Categoría */}
-      <td className="py-3 px-6 text-sm text-slate-600 align-top pt-4">{categoryName}</td>
+      <td className="flex items-start justify-between gap-3 border-t border-slate-100 px-4 py-2.5 text-sm text-slate-600 md:table-cell md:border-t-0 md:px-6 md:py-3 md:pt-3 md:align-top">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Categoría</span>
+        {editingCategory ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 md:min-w-40">
+            <select
+              value={categoryDraft}
+              onChange={event => setCategoryDraft(event.target.value)}
+              disabled={savingCategory}
+              className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label={`Categoría de ${product.name}`}
+              data-testid={`product-category-select-${product.id}`}
+            >
+              <option value="">Sin categoría</option>
+              {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => void saveCategory()}
+              disabled={savingCategory}
+              className="rounded-lg p-1.5 text-emerald-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800 disabled:opacity-50"
+              aria-label={`Guardar categoría de ${product.name}`}
+            >
+              <Check className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditingCategory(false)}
+              disabled={savingCategory}
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+              aria-label={`Cancelar categoría de ${product.name}`}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{categoryName}</span>
+            <button
+              type="button"
+              onClick={startCategoryEdit}
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-blue-50 hover:text-[#2563EB]"
+              aria-label={`Editar categoría de ${product.name}`}
+              title="Cambiar categoría"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+      </td>
 
       {/* Tipo */}
-      <td className="py-3 px-6 text-sm text-slate-600 capitalize align-top pt-4">
-        {isWeightProduct ? 'Por Peso' : 'Unidad'}
+      <td className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-sm capitalize text-slate-600 md:table-cell md:border-t-0 md:px-6 md:py-3 md:pt-4 md:align-top">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>
+        <span>{isWeightProduct ? 'Por Peso' : 'Unidad'}</span>
+      </td>
+
+      {/* Stock */}
+      <td className="flex items-start justify-between border-t border-slate-100 px-4 py-2.5 md:table-cell md:border-t-0 md:px-6 md:py-3 md:pt-4 md:align-top" data-testid={`product-stock-${product.id}`}>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Stock total</span>
+        <div className="flex flex-col">
+          <span className={`text-sm font-semibold font-mono ${
+            presentations.reduce((sum, p) => sum + Number(p.stock || 0), 0) <= 0 
+              ? 'text-red-500' 
+              : 'text-slate-800'
+          }`}>
+            {presentations.reduce((sum, p) => sum + Number(p.stock || 0), 0).toLocaleString('es-AR', {
+              minimumFractionDigits: isWeightProduct ? 0 : 0,
+              maximumFractionDigits: isWeightProduct ? 3 : 0,
+            })} {isWeightProduct ? 'kg' : 'uds'}
+          </span>
+          <span className="text-[11px] text-slate-400">
+            {presentations.length === 1 ? '1 presentación' : `${presentations.length} presentaciones`}
+          </span>
+        </div>
       </td>
 
       {/* Estado + Presentaciones */}
-      <td className="py-3 px-6 align-top pt-3">
+      <td className="border-t border-slate-100 px-4 py-3 md:table-cell md:border-t-0 md:px-6 md:py-3 md:align-top">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-md">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
               Activo
             </span>
-            {presentations.length > 0 && (
+            {presentations.length > 0 ? (
               <button
                 onClick={() => setExpanded(e => !e)}
                 className="inline-flex items-center gap-1 text-xs text-[#2563EB] hover:text-blue-700 font-medium transition-colors"
@@ -199,7 +415,27 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                 {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 {presentations.length} presentación{presentations.length !== 1 ? 'es' : ''}
               </button>
+            ) : (
+              <button
+                onClick={() => { setExpanded(true); setShowAddPres(true); }}
+                className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-md font-medium transition-colors"
+                data-testid={`add-first-presentation-${product.id}`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Configurar presentación
+              </button>
             )}
+            <button
+              type="button"
+              onClick={() => void handleDeleteProduct()}
+              disabled={deletingId !== null}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+              aria-label={`Eliminar producto ${product.name}`}
+              title="Eliminar producto"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Eliminar
+            </button>
           </div>
 
           {expanded && (
@@ -227,7 +463,7 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                       {isWeightProduct ? (
                         <>
                           {/* Peso del bulto */}
-                          <div className="grid grid-cols-2 gap-3">
+                          <div>
                             <div>
                               <label className="block text-xs font-semibold text-slate-500 mb-1">Peso del bulto (kg)</label>
                               <div className="relative">
@@ -241,21 +477,10 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                                 />
                               </div>
                             </div>
-                            {/* Stock */}
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 mb-1">Stock (kg)</label>
-                              <input
-                                type="number" step="0.001" min="0"
-                                value={editState.stock}
-                                onChange={e => setProp('stock', e.target.value)}
-                                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] outline-none bg-white"
-                                placeholder="0"
-                              />
-                            </div>
                           </div>
 
                           {/* Precio y costo del bulto */}
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
                               <label className="block text-xs font-semibold text-slate-500 mb-1">
                                 Precio de venta del bulto ($)
@@ -320,7 +545,7 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                               <Calculator className="w-3.5 h-3.5" />
                               Vista previa del cálculo
                             </div>
-                            <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
                               <div className="text-center p-2 bg-slate-50 rounded-lg">
                                 <div className="text-slate-400 text-[10px] mb-0.5">Costo/kg</div>
                                 <div className="font-semibold text-slate-700">
@@ -332,7 +557,7 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                               <div className="text-center p-2 bg-slate-50 rounded-lg">
                                 <div className="text-slate-400 text-[10px] mb-0.5">Base/kg (sin margen)</div>
                                 <div className="font-semibold text-slate-700">
-                                  {editState.priceBulk && editState.weight_kg
+                                  {Number(editState.priceBulk) > 0 && Number(editState.weight_kg) > 0
                                     ? `$${(Number(editState.priceBulk) / Number(editState.weight_kg)).toFixed(2)}`
                                     : '—'}
                                 </div>
@@ -346,18 +571,11 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                                 </div>
                               </div>
                             </div>
-                            {previewPricePerKg != null && previewCostPerKg != null && previewPricePerKg > 0 && (
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
-                                <Info className="w-3 h-3" />
-                                Ganancia por kg vendido suelto: ${(previewPricePerKg - previewCostPerKg).toFixed(2)}
-                                {' '}({(((previewPricePerKg - previewCostPerKg) / previewCostPerKg) * 100).toFixed(1)}% sobre costo)
-                              </div>
-                            )}
                           </div>
                         </>
                       ) : (
                         // ── Producto por unidad ─────────────────────────────
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div>
                             <label className="block text-xs font-semibold text-slate-500 mb-1">Precio de venta ($)</label>
                             <div className="relative">
@@ -383,16 +601,6 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                                 placeholder="0.00"
                               />
                             </div>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">Stock (uds)</label>
-                            <input
-                              type="number" step="1" min="0"
-                              value={editState.stock}
-                              onChange={e => setProp('stock', e.target.value)}
-                              className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] outline-none bg-white"
-                              placeholder="0"
-                            />
                           </div>
                         </div>
                       )}
@@ -423,7 +631,7 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                 return (
                   <div
                     key={pres.id}
-                    className="border border-slate-200 rounded-lg bg-white p-3 flex items-center justify-between max-w-lg"
+                    className="flex max-w-lg flex-col items-stretch gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-2xs sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <span className="text-sm font-medium text-slate-700">{pres.name}</span>
@@ -476,17 +684,153 @@ export function ProductDetail({ product, categoryName, idx, onUpdated }: Product
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => startEdit(pres)}
-                      data-testid={`edit-presentation-${pres.id}`}
-                      className="ml-3 p-1.5 text-slate-400 hover:text-[#2563EB] hover:bg-blue-50 rounded-lg transition-colors shrink-0"
-                      title="Editar presentación"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                    <div className="flex shrink-0 items-center justify-end gap-1 sm:ml-3">
+                      <button
+                        onClick={() => startEdit(pres)}
+                        data-testid={`edit-presentation-${pres.id}`}
+                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-blue-50 hover:text-[#2563EB]"
+                        title="Editar presentación"
+                        aria-label={`Editar presentación ${pres.name}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeletePresentation(pres)}
+                        disabled={deletingId !== null}
+                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                        title="Eliminar presentación"
+                        aria-label={`Eliminar presentación ${pres.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
+
+              {/* Formulario / Botón para agregar una nueva presentación */}
+              {showAddPres ? (
+                <form
+                  onSubmit={handleCreateNewPresentation}
+                  className="border border-blue-200 rounded-xl bg-blue-50/20 p-4 space-y-3 max-w-lg"
+                  data-testid="add-presentation-form"
+                >
+                  <div className="flex items-center justify-between pb-1 border-b border-blue-100">
+                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-[#2563EB]" />
+                      Nueva Presentación
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddPres(false)}
+                      className="text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre</label>
+                    <input
+                      required
+                      type="text"
+                      value={newPresName}
+                      onChange={e => setNewPresName(e.target.value)}
+                      placeholder={isWeightProduct ? 'Ej: Bolsa 15kg' : 'Ej: Unidad'}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
+                      data-testid="new-pres-name-input"
+                    />
+                  </div>
+
+                  {isWeightProduct && (
+                    <div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Peso del bulto (kg)</label>
+                        <input
+                          type="number" step="0.1" min="0.1"
+                          value={newPresWeight}
+                          onChange={e => setNewPresWeight(e.target.value)}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
+                          placeholder="15"
+                          data-testid="new-pres-weight-input"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Precio venta ($)</label>
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={newPresPrice}
+                        onChange={e => setNewPresPrice(e.target.value)}
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#10B981]"
+                        placeholder="0"
+                        data-testid="new-pres-price-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Costo compra ($)</label>
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={newPresCost}
+                        onChange={e => setNewPresCost(e.target.value)}
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+
+                  {isWeightProduct && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Margen adicional venta suelta (%)
+                      </label>
+                      <input
+                        type="number" min="0" max="100"
+                        value={newPresMargen}
+                        onChange={e => setNewPresMargen(e.target.value)}
+                        className="w-24 px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#10B981]"
+                      />
+                      {newPresPricePerKgCalc != null && newPresPricePerKgCalc > 0 && (
+                        <p className="text-[11px] text-green-700 font-semibold mt-1">
+                          Precio suelto calculado: ${newPresPricePerKgCalc.toFixed(2)}/kg
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddPres(false)}
+                      className="px-3 py-1.5 text-xs bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingNewPres}
+                      className="px-4 py-1.5 text-xs bg-[#2563EB] text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 font-medium"
+                      data-testid="submit-new-presentation-btn"
+                    >
+                      {savingNewPres ? 'Guardando...' : 'Crear presentación'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAddPres(true)}
+                  className="inline-flex items-center gap-1.5 text-xs text-[#2563EB] hover:text-blue-700 font-medium py-1.5 px-2.5 rounded-lg hover:bg-blue-50 border border-dashed border-blue-200 transition-colors"
+                  data-testid={`add-presentation-btn-${product.id}`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Agregar otra presentación
+                </button>
+              )}
             </div>
           )}
         </div>

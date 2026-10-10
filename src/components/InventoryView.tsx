@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { inventoryService } from '../services/inventoryService';
-import { productService } from '../services/productService';
+import type { StockMutationResult } from '../services/inventoryService';
 import type { Database } from '../types/database.types';
 import {
   AlertTriangle, ArrowDownCircle, ArrowUpCircle, BarChart2,
-  CheckCircle, ChevronDown, ChevronUp, ClipboardList, RefreshCw, X,
+  CheckCircle, ClipboardList, RefreshCw, X,
 } from 'lucide-react';
 
 type MovementRow = Database['public']['Tables']['inventory_movements']['Row'];
@@ -41,16 +41,19 @@ function formatDate(iso: string | null): string {
   });
 }
 
-function formatQty(qty: number): string {
+function formatQty(qty: number, fractionDigits = 3): string {
   const sign = qty > 0 ? '+' : '';
-  return `${sign}${Number(qty).toLocaleString('es-AR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;
+  return `${sign}${Number(qty).toLocaleString('es-AR', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })}`;
 }
 
 // ── Formulario de Merma ────────────────────────────────────────────────────
 
 interface ShrinkageFormProps {
   products: Product[];
-  onSuccess: () => void;
+  onSuccess: (result: StockMutationResult) => void;
 }
 
 type ShrinkageFormState = {
@@ -96,16 +99,14 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
 
     setSaving(true);
     try {
-      await inventoryService.recordShrinkage({
+      const result = await inventoryService.recordShrinkage({
         presentationId: form.presentationId,
-        productId: form.productId,
-        quantity: Number(form.quantity),
+        quantity: form.quantity as `${number}`,
         reason: effectiveReason,
-        currentStock: Number(selectedPres.stock),
       });
       setForm({ productId: '', presentationId: '', quantity: '', reason: '' });
       setCustomReason('');
-      onSuccess();
+      onSuccess(result);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error desconocido.');
     } finally {
@@ -124,7 +125,7 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Producto */}
         <div>
           <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Producto</label>
@@ -167,7 +168,7 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
         <input
           type="number"
           step={isWeightProduct ? '0.001' : '1'}
-          min="0.001"
+          min={isWeightProduct ? '0.001' : '1'}
           max={selectedPres ? Number(selectedPres.stock) : undefined}
           value={form.quantity}
           onChange={e => set('quantity', e.target.value)}
@@ -238,7 +239,7 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
 
 interface AdjustmentFormProps {
   products: Product[];
-  onSuccess: () => void;
+  onSuccess: (result: StockMutationResult) => void;
 }
 
 function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
@@ -262,18 +263,17 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
     if (!productId || !presentationId) { setError('Seleccioná producto y presentación.'); return; }
     if (physNum == null || physNum < 0) { setError('Ingresá el stock físico contado.'); return; }
     if (systemStock == null) return;
+    if (!reason.trim()) { setError('El motivo es obligatorio para guardar un ajuste.'); return; }
 
     setSaving(true);
     try {
-      await inventoryService.recordAdjustment({
+      const result = await inventoryService.recordAdjustment({
         presentationId,
-        productId,
-        physicalStock: physNum,
-        systemStock,
-        reason: reason.trim() || undefined,
+        physicalStock: physicalStock as `${number}`,
+        reason: reason.trim(),
       });
       setProductId(''); setPresentationId(''); setPhysicalStock(''); setReason('');
-      onSuccess();
+      onSuccess(result);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error desconocido.');
     } finally {
@@ -290,7 +290,7 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Producto</label>
           <select
@@ -322,7 +322,7 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
 
       {/* Comparativa Stock Físico vs Sistema */}
       {selectedPres && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-200">
             <div className="text-xs text-slate-400 mb-1">Stock en sistema</div>
             <div className="text-lg font-bold text-slate-700">
@@ -356,8 +356,8 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
               : delta < 0 ? 'text-red-600'
               : 'text-green-600'
             }`}>
-              {delta == null ? '—' : formatQty(delta)}
-              {delta != null && <span className="text-xs font-normal ml-1">{isWeightProduct ? 'kg' : 'uds'}</span>}
+              {delta == null ? '—' : formatQty(delta, isWeightProduct ? 3 : 0)}
+              {delta != null && <>{' '}<span className="ml-1 text-xs font-normal">{isWeightProduct ? 'kg' : 'uds'}</span></>}
             </div>
             {delta === 0 && <div className="text-xs text-green-600 mt-0.5 flex items-center justify-center gap-1"><CheckCircle className="w-3 h-3" /> Sin diferencia</div>}
           </div>
@@ -366,7 +366,7 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
 
       <div>
         <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
-          Observación <span className="text-slate-400 font-normal">(opcional)</span>
+          Motivo <span className="text-red-500 font-bold">*</span>
         </label>
         <input
           type="text"
@@ -412,9 +412,9 @@ function MovementsTable({ movements, loading }: MovementsTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left border-collapse text-sm">
-        <thead>
+    <div className="md:overflow-x-auto" data-testid="inventory-movements-list">
+      <table className="block w-full border-collapse text-left text-sm md:table">
+        <thead className="hidden md:table-header-group">
           <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wide">
             <th className="py-3 px-4">Fecha</th>
             <th className="py-3 px-4">Tipo</th>
@@ -423,24 +423,35 @@ function MovementsTable({ movements, loading }: MovementsTableProps) {
             <th className="py-3 px-4">Motivo</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="block space-y-3 bg-slate-50/60 p-3 md:table-row-group md:space-y-0 md:bg-white md:p-0">
           {movements.map(mov => {
             const meta = MOVEMENT_LABELS[mov.type] ?? { label: mov.type, color: 'text-slate-600 bg-slate-50', icon: null };
             const qty = Number(mov.quantity);
             return (
-              <tr key={mov.id} className="hover:bg-slate-50 transition-colors">
-                <td className="py-3 px-4 text-slate-500 whitespace-nowrap">{formatDate(mov.created_at)}</td>
-                <td className="py-3 px-4">
+              <tr key={mov.id} className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:bg-slate-50 md:table-row md:rounded-none md:border-0 md:p-0 md:shadow-none">
+                <td className="whitespace-nowrap text-xs text-slate-500 md:table-cell md:px-4 md:py-3 md:text-sm">
+                  <span className="mb-1 block text-[11px] font-medium text-slate-400 md:hidden">Fecha</span>
+                  {formatDate(mov.created_at)}
+                </td>
+                <td className="text-right md:table-cell md:px-4 md:py-3 md:text-left">
+                  <span className="mb-1 block text-[11px] font-medium text-slate-400 md:hidden">Tipo</span>
                   <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full ${meta.color}`}>
                     {meta.icon}
                     {meta.label}
                   </span>
                 </td>
-                <td className="py-3 px-4 text-slate-700 text-xs">{mov.presentation_id?.slice(0, 8) ?? '—'}</td>
-                <td className={`py-3 px-4 text-right font-mono font-semibold ${qty < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                <td className="text-xs text-slate-700 md:table-cell md:px-4 md:py-3">
+                  <span className="mb-1 block font-sans text-[11px] font-medium text-slate-400 md:hidden">Presentación</span>
+                  {mov.presentation_id?.slice(0, 8) ?? '—'}
+                </td>
+                <td className={`text-right font-mono font-semibold md:table-cell md:px-4 md:py-3 ${qty < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                  <span className="mb-1 block font-sans text-[11px] font-medium text-slate-400 md:hidden">Cantidad</span>
                   {formatQty(qty)}
                 </td>
-                <td className="py-3 px-4 text-slate-500 text-xs max-w-xs truncate">{mov.reason ?? '—'}</td>
+                <td className="col-span-2 text-xs text-slate-500 md:table-cell md:max-w-xs md:truncate md:px-4 md:py-3">
+                  <span className="mb-1 block text-[11px] font-medium text-slate-400 md:hidden">Motivo</span>
+                  {mov.reason ?? '—'}
+                </td>
               </tr>
             );
           })}
@@ -456,9 +467,10 @@ type Tab = 'mermas' | 'ajustes' | 'kardex';
 
 interface InventoryViewProps {
   products: Product[];
+  onStockChanged?: (result: StockMutationResult) => void;
 }
 
-export function InventoryView({ products }: InventoryViewProps) {
+export function InventoryView({ products, onStockChanged }: InventoryViewProps) {
   const [tab, setTab] = useState<Tab>('mermas');
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [loadingMov, setLoadingMov] = useState(true);
@@ -476,9 +488,12 @@ export function InventoryView({ products }: InventoryViewProps) {
     }
   }, []);
 
+  // The initial server snapshot intentionally seeds this remote-data view.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadMovements(); }, [loadMovements]);
 
-  const handleSuccess = (msg: string) => {
+  const handleSuccess = (msg: string, result: StockMutationResult) => {
+    onStockChanged?.(result);
     setSuccessMsg(msg);
     void loadMovements();
     setTimeout(() => setSuccessMsg(null), 4000);
@@ -491,8 +506,8 @@ export function InventoryView({ products }: InventoryViewProps) {
   ];
 
   return (
-    <div className="flex flex-col h-full gap-6">
-      <header className="flex justify-between items-end">
+    <div className="flex min-h-full flex-col gap-4 sm:gap-6">
+      <header className="flex flex-col items-start gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Inventario</h2>
           <p className="text-sm text-slate-500 mt-0.5">Control de mermas, ajustes y Kardex</p>
@@ -515,13 +530,13 @@ export function InventoryView({ products }: InventoryViewProps) {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+      <div className="grid w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 sm:flex sm:w-fit">
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             data-testid={`tab-${t.id}`}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-2.5 text-center text-[11px] font-medium leading-tight transition-all sm:flex-row sm:gap-2 sm:px-4 sm:py-2 sm:text-sm ${
               tab === t.id
                 ? 'bg-white text-slate-800 shadow-sm'
                 : 'text-slate-500 hover:text-slate-700'
@@ -534,9 +549,9 @@ export function InventoryView({ products }: InventoryViewProps) {
       </div>
 
       {/* Panel activo */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+      <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {tab === 'mermas' && (
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <div className="flex items-center gap-2 mb-5">
               <div className="p-2 bg-red-50 rounded-lg">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -548,13 +563,13 @@ export function InventoryView({ products }: InventoryViewProps) {
             </div>
             <ShrinkageForm
               products={products}
-              onSuccess={() => handleSuccess('Merma registrada correctamente.')}
+              onSuccess={result => handleSuccess('Merma registrada correctamente.', result)}
             />
           </div>
         )}
 
         {tab === 'ajustes' && (
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <div className="flex items-center gap-2 mb-5">
               <div className="p-2 bg-amber-50 rounded-lg">
                 <BarChart2 className="w-5 h-5 text-amber-600" />
@@ -566,17 +581,17 @@ export function InventoryView({ products }: InventoryViewProps) {
             </div>
             <AdjustmentForm
               products={products}
-              onSuccess={() => handleSuccess('Ajuste registrado correctamente.')}
+              onSuccess={result => handleSuccess('Ajuste registrado correctamente.', result)}
             />
           </div>
         )}
 
         {tab === 'kardex' && (
-          <div className="flex flex-col flex-1">
-            <div className="px-6 pt-5 pb-3 border-b border-slate-100 flex items-center gap-2">
+          <div className="flex flex-col">
+            <div className="flex items-start gap-2 border-b border-slate-100 px-4 pb-3 pt-4 sm:items-center sm:px-6 sm:pt-5">
               <ClipboardList className="w-5 h-5 text-slate-400" />
               <h3 className="font-semibold text-slate-800">Kardex — Historial de movimientos</h3>
-              <span className="ml-auto text-xs text-slate-400">{movements.length} registros</span>
+              <span className="ml-auto shrink-0 text-xs text-slate-400">{movements.length} registros</span>
             </div>
             <MovementsTable movements={movements} loading={loadingMov} />
           </div>

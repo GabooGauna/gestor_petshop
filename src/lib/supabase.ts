@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../types/database.types';
 
-// @ts-ignore - Fallback to process.env for Node/Playwright environments
+// @ts-expect-error - Fallback to process.env for Node/Playwright environments
 const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-// @ts-ignore
+// @ts-expect-error - Fallback to process.env for Node/Playwright environments
 const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {

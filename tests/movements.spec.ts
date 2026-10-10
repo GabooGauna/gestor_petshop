@@ -1,162 +1,105 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { installMockBackend, loginWithMockUser, mockCatalog } from './support/e2e';
 
-/**
- * Tests E2E — Stage 04: Control de Mermas y Ajustes de Stock
- * Agente Tester — Playwright
- *
- * Cubre:
- *  1. La vista Inventario carga con los 3 tabs
- *  2. Merma sin motivo → bloqueada con mensaje de error
- *  3. Merma sin producto → bloqueada
- *  4. Merma con motivo → formulario habilitado
- *  5. Los 6 motivos predefinidos están presentes
- *  6. Tab Ajuste de Stock carga correctamente
- *  7. Ajuste con stock físico = sistema → botón deshabilitado
- *  8. Tab Kardex carga la tabla de historial
- *  9. El sidebar Inventario activa el highlight correcto
- */
+async function openInventory(page: Page): Promise<void> {
+  await installMockBackend(page);
+  await loginWithMockUser(page);
+  await page.getByRole('button', { name: 'Inventario' }).click();
+  await expect(page.getByRole('heading', { name: 'Inventario' })).toBeVisible();
+}
 
-test.describe('Inventario — Mermas y Ajustes (Stage 04)', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('http://localhost:5173');
-    // Navegar a Inventario desde el sidebar
-    await page.click('button:has-text("Inventario")');
-    await expect(page.locator('h2', { hasText: 'Inventario' })).toBeVisible();
+test.describe('Inventario — mermas, ajustes y Kardex (backend simulado)', () => {
+  test.beforeEach(async ({ page }) => openInventory(page));
+
+  test('muestra las tres vistas y bloquea merma sin motivo', async ({ page }) => {
+    await expect(page.getByTestId('tab-mermas')).toBeVisible();
+    await expect(page.getByTestId('tab-ajustes')).toBeVisible();
+    await expect(page.getByTestId('tab-kardex')).toBeVisible();
+    await page.getByTestId('shrinkage-submit').click();
+    await expect(page.getByTestId('shrinkage-error')).toContainText('Seleccioná un producto');
   });
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 1: La vista Inventario muestra los 3 tabs
-  // ──────────────────────────────────────────────────────────────────────────
-  test('debe mostrar los 3 tabs: Merma, Ajuste, Kardex', async ({ page }) => {
-    await expect(page.locator('[data-testid="tab-mermas"]')).toBeVisible();
-    await expect(page.locator('[data-testid="tab-ajustes"]')).toBeVisible();
-    await expect(page.locator('[data-testid="tab-kardex"]')).toBeVisible();
+  test('la merma envía una única RPC y actualiza el stock del desplegable sin recargar', async ({ page }) => {
+    let rpcBody: unknown;
+    await page.route('**/rest/v1/rpc/record_shrinkage', async route => {
+      rpcBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        movement_id: '12121212-1212-4121-8121-121212121212',
+        product_id: mockCatalog.products[0].id,
+        presentation_id: mockCatalog.products[0].product_presentations[0].id,
+        quantity: '-0.500', stock_before: '200.000', stock_after: '199.500',
+      }) });
+    });
+    await page.getByTestId('shrinkage-product-select').selectOption(mockCatalog.products[0].id);
+    await page.getByTestId('shrinkage-presentation-select').selectOption(mockCatalog.products[0].product_presentations[0].id);
+    await page.getByTestId('shrinkage-quantity-input').fill('0.5');
+    await page.getByRole('button', { name: 'Alimento vencido' }).click();
+    await page.getByTestId('shrinkage-submit').click();
+    await expect.poll(() => rpcBody).toBeTruthy();
+    expect(rpcBody).toEqual({
+      p_presentation_id: mockCatalog.products[0].product_presentations[0].id,
+      p_quantity: '0.5', p_reason: 'Alimento vencido',
+    });
+    await expect(page.getByTestId('inventory-success')).toBeVisible();
+
+    await page.getByTestId('shrinkage-product-select').selectOption(mockCatalog.products[0].id);
+    await expect(page.getByTestId('shrinkage-presentation-select')).toContainText('stock: 199,5 kg');
   });
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 2 (CRÍTICO): Merma sin motivo → bloqueada
-  // ──────────────────────────────────────────────────────────────────────────
-  test('no debe permitir guardar una merma sin seleccionar motivo', async ({ page }) => {
-    // El tab de mermas debería ser el activo por defecto
-    await expect(page.locator('[data-testid="shrinkage-form"]')).toBeVisible();
-
-    // Intentar enviar sin llenar nada
-    const submitBtn = page.locator('[data-testid="shrinkage-submit"]');
-    await submitBtn.click();
-
-    // Debe aparecer un mensaje de error
-    const errorEl = page.locator('[data-testid="shrinkage-error"]');
-    await expect(errorEl).toBeVisible({ timeout: 3000 });
-    const errorText = await errorEl.innerText();
-    expect(errorText.toLowerCase()).toMatch(/producto|motivo|seleccion/i);
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 3: Merma — el aviso de motivo obligatorio es visible
-  // ──────────────────────────────────────────────────────────────────────────
-  test('debe mostrar advertencia de motivo obligatorio al inicio', async ({ page }) => {
-    await expect(page.locator('[data-testid="shrinkage-form"]')).toBeVisible();
-
-    // El texto "El motivo es obligatorio" o similar debe estar visible (inline en el form)
-    const warningEl = page.locator('text=El motivo es obligatorio').first();
-    await expect(warningEl).toBeVisible();
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 4: Los 6 motivos predefinidos están presentes
-  // ──────────────────────────────────────────────────────────────────────────
-  test('debe mostrar los 6 botones de motivo predefinido', async ({ page }) => {
-    const reasons = [
-      'Alimento vencido',
-      'Derrame / rotura de envase',
-      'Daño por humedad',
-      'Contaminación',
-      'Robo / faltante',
-      'Otro',
-    ];
-
-    for (const reason of reasons) {
-      // Use text matching — immune to special-char sanitisation in data-testid
-      await expect(page.locator('button', { hasText: reason }).first()).toBeVisible();
-    }
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 5: Seleccionar motivo "Otro" muestra el input de motivo personalizado
-  // ──────────────────────────────────────────────────────────────────────────
-  test('seleccionar "Otro" debe mostrar campo de texto personalizado', async ({ page }) => {
-    const otroBtn = page.locator('[data-testid="reason-btn-Otro"]');
-    await otroBtn.click();
-
-    const customInput = page.locator('[data-testid="shrinkage-custom-reason"]');
-    await expect(customInput).toBeVisible();
-    await customInput.fill('Merma por rotura durante traslado');
-    await expect(customInput).toHaveValue('Merma por rotura durante traslado');
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 6: Tab Ajuste de Stock carga el formulario
-  // ──────────────────────────────────────────────────────────────────────────
-  test('tab Ajuste de Stock debe mostrar su formulario', async ({ page }) => {
-    await page.click('[data-testid="tab-ajustes"]');
-    await expect(page.locator('[data-testid="adjustment-form"]')).toBeVisible();
-    await expect(page.locator('[data-testid="adjustment-product-select"]')).toBeVisible();
-    await expect(page.locator('[data-testid="adjustment-presentation-select"]')).toBeVisible();
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 7: Ajuste con productos disponibles — el selector de presentación
-  //         está deshabilitado hasta seleccionar producto
-  // ──────────────────────────────────────────────────────────────────────────
-  test('en Ajuste, el selector de presentación debe estar deshabilitado sin producto', async ({ page }) => {
-    await page.click('[data-testid="tab-ajustes"]');
-    const presSelect = page.locator('[data-testid="adjustment-presentation-select"]');
-    await expect(presSelect).toBeDisabled();
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 8: Tab Kardex carga la tabla de historial
-  // ──────────────────────────────────────────────────────────────────────────
-  test('tab Kardex debe mostrar tabla o mensaje de sin movimientos', async ({ page }) => {
-    await page.click('[data-testid="tab-kardex"]');
-
-    // Debe aparecer la tabla O el mensaje vacío
-    const tableOrEmpty = page.locator('table, [data-testid="tab-kardex"] ~ * text=Sin movimientos');
-    const hasTable = await page.locator('table').isVisible().catch(() => false);
-    const hasEmpty = await page.locator('text=Sin movimientos').isVisible().catch(() => false);
-
-    expect(hasTable || hasEmpty).toBe(true);
-    console.log(`INFO: Kardex → ${hasTable ? 'tabla con datos' : 'sin movimientos'} ✓`);
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 9: El sidebar resalta "Inventario" cuando la vista está activa
-  // ──────────────────────────────────────────────────────────────────────────
-  test('el botón Inventario del sidebar debe tener clase activa', async ({ page }) => {
-    const sidebarBtn = page.locator('button:has-text("Inventario")').first();
-    const cls = await sidebarBtn.getAttribute('class') ?? '';
-    // Debe tener el indicador de activo (border-l o text-blue)
-    expect(cls).toMatch(/border-l|text-blue/);
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // TEST 10: Validación matemática pura — signos de mermas y ajustes
-  // ──────────────────────────────────────────────────────────────────────────
-  test('calcular signo: merma siempre negativa, ajuste positivo o negativo', async ({ page }) => {
-    const result = await page.evaluate(() => {
-      // Merma: siempre negativa
-      const shrinkageQty = -Math.abs(5.5);
-      // Ajuste sobrante (físico > sistema): positivo
-      const surplusDelta = 10 - 8;
-      // Ajuste faltante (físico < sistema): negativo
-      const deficitDelta = 6 - 8;
-
-      return { shrinkageQty, surplusDelta, deficitDelta };
+  test('el ajuste envía stock físico, no un delta calculado por el navegador', async ({ page }) => {
+    let rpcBody: unknown;
+    await page.route('**/rest/v1/rpc/record_stock_adjustment', async route => {
+      rpcBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        movement_id: '13131313-1313-4131-8131-131313131313',
+        product_id: mockCatalog.products[0].id,
+        presentation_id: mockCatalog.products[0].product_presentations[0].id,
+        quantity: '-1.500', stock_before: '200.000', stock_after: '198.500',
+      }) });
+    });
+    await page.getByTestId('tab-ajustes').click();
+    await page.getByTestId('adjustment-product-select').selectOption(mockCatalog.products[0].id);
+    await page.getByTestId('adjustment-presentation-select').selectOption(mockCatalog.products[0].product_presentations[0].id);
+    await page.getByTestId('adjustment-physical-input').fill('198.5');
+    await page.getByTestId('adjustment-reason-input').fill('Conteo QA');
+    await page.getByTestId('adjustment-submit').click();
+    await expect.poll(() => rpcBody).toBeTruthy();
+    expect(rpcBody).toEqual({
+      p_presentation_id: mockCatalog.products[0].product_presentations[0].id,
+      p_physical_stock: '198.5', p_reason: 'Conteo QA',
     });
 
-    expect(result.shrinkageQty).toBeLessThan(0);
-    expect(result.surplusDelta).toBeGreaterThan(0);
-    expect(result.deficitDelta).toBeLessThan(0);
-    console.log(`INFO: Signos correctos: merma=${result.shrinkageQty}, sobrante=+${result.surplusDelta}, faltante=${result.deficitDelta} ✓`);
+    await page.getByTestId('adjustment-product-select').selectOption(mockCatalog.products[0].id);
+    await page.getByTestId('adjustment-presentation-select').selectOption(mockCatalog.products[0].product_presentations[0].id);
+    await expect(page.getByText('Stock en sistema').locator('..')).toContainText('198,5');
+  });
+
+  test('muestra diferencias de unidades sin decimales', async ({ page }) => {
+    const unitProduct = mockCatalog.products[1];
+    await page.getByTestId('tab-ajustes').click();
+    await page.getByTestId('adjustment-product-select').selectOption(unitProduct.id);
+    await page.getByTestId('adjustment-presentation-select').selectOption(unitProduct.product_presentations[0].id);
+    await page.getByTestId('adjustment-physical-input').fill('14');
+
+    const differenceCard = page.getByText('Diferencia').locator('..');
+    await expect(differenceCard).toContainText('-1 uds');
+    await expect(differenceCard).not.toContainText('-1,000 uds');
+  });
+
+  test('Kardex representa compra positiva y venta/merma negativas', async ({ page }) => {
+    const movements = [
+      { id: '1', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'compra', quantity: 20, reason: 'Compra QA', reference_id: null, reference_type: null, created_at: '2026-10-09T12:00:00Z' },
+      { id: '2', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'venta', quantity: -2.5, reason: 'Venta QA', reference_id: null, reference_type: null, created_at: '2026-10-09T13:00:00Z' },
+      { id: '3', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'merma', quantity: -0.5, reason: 'Merma QA', reference_id: null, reference_type: null, created_at: '2026-10-09T14:00:00Z' },
+    ];
+    await page.unroute('**/rest/v1/inventory_movements*');
+    await page.route('**/rest/v1/inventory_movements*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(movements) }));
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Inventario' })).toBeVisible();
+    await page.getByRole('button', { name: 'Inventario' }).click();
+    await page.getByTestId('tab-kardex').click();
+    await expect(page.getByRole('table')).toContainText('+20,000');
+    await expect(page.getByRole('table')).toContainText('-2,500');
+    await expect(page.getByRole('table')).toContainText('-0,500');
   });
 });

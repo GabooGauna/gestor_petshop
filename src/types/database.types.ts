@@ -40,6 +40,8 @@ export type Database = {
           product_id: string | null
           quantity: number
           reason: string | null
+          reference_id: string | null
+          reference_type: string | null
           type: string
         }
         Insert: {
@@ -49,6 +51,8 @@ export type Database = {
           product_id?: string | null
           quantity: number
           reason?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
           type: string
         }
         Update: {
@@ -58,6 +62,8 @@ export type Database = {
           product_id?: string | null
           quantity?: number
           reason?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
           type?: string
         }
         Relationships: [
@@ -251,6 +257,7 @@ export type Database = {
       }
       sale_items: {
         Row: {
+          commercial_quantity: number | null
           cost: number
           created_at: string | null
           id: string
@@ -258,10 +265,12 @@ export type Database = {
           product_id: string | null
           quantity: number
           sale_id: string | null
+          sale_mode: string | null
           subtotal: number
           unit_price: number
         }
         Insert: {
+          commercial_quantity?: number | null
           cost: number
           created_at?: string | null
           id?: string
@@ -269,10 +278,12 @@ export type Database = {
           product_id?: string | null
           quantity: number
           sale_id?: string | null
+          sale_mode?: string | null
           subtotal: number
           unit_price: number
         }
         Update: {
+          commercial_quantity?: number | null
           cost?: number
           created_at?: string | null
           id?: string
@@ -280,6 +291,7 @@ export type Database = {
           product_id?: string | null
           quantity?: number
           sale_id?: string | null
+          sale_mode?: string | null
           subtotal?: number
           unit_price?: number
         }
@@ -357,23 +369,44 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_presentation: {
+        Args: { p_presentation_id: string }
+        Returns: Json
+      }
+      delete_product: {
+        Args: { p_product_id: string }
+        Returns: Json
+      }
       process_purchase: {
         Args: {
           p_invoice_number: string
           p_items: Json
           p_supplier_id: string
-          p_total_amount: number
         }
-        Returns: string
+        Returns: Json
       }
       process_sale: {
         Args: {
           p_items: Json
           p_payment_method: string
-          p_total_amount: number
-          p_total_cost: number
         }
-        Returns: string
+        Returns: Json
+      }
+      record_shrinkage: {
+        Args: {
+          p_presentation_id: string
+          p_quantity: number | string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      record_stock_adjustment: {
+        Args: {
+          p_physical_stock: number | string
+          p_presentation_id: string
+          p_reason: string
+        }
+        Returns: Json
       }
     }
     Enums: {
