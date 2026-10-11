@@ -4,6 +4,7 @@ import type { DecimalString } from '../types/domain';
 
 export type DecimalInput = DecimalString;
 export type SaleMode = 'amount' | 'weight' | 'package' | 'unit';
+export type SaleCostBasis = 'opening_cost' | 'last_purchase';
 
 interface SaleItemBase {
   presentation_id: string;
@@ -26,6 +27,9 @@ export interface SaleResult {
     unit_price: DecimalInput;
     subtotal: DecimalInput;
     line_cost: DecimalInput;
+    replacement_cost_snapshot: DecimalInput;
+    presentation_weight_snapshot: DecimalInput | null;
+    cost_basis: SaleCostBasis;
     stock_after: DecimalInput;
   }>;
 }
@@ -50,6 +54,9 @@ function isSaleResult(value: unknown): value is SaleResult {
         && isDecimal(row.unit_price)
         && isDecimal(row.subtotal)
         && isDecimal(row.line_cost)
+        && isDecimal(row.replacement_cost_snapshot)
+        && (row.presentation_weight_snapshot === null || isDecimal(row.presentation_weight_snapshot))
+        && (row.cost_basis === 'opening_cost' || row.cost_basis === 'last_purchase')
         && isDecimal(row.stock_after);
     });
 }

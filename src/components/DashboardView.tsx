@@ -99,8 +99,8 @@ function SalesChart({ data }: { data: DashboardAnalytics['daily_sales'] }) {
         <p className="text-sm font-bold capitalize text-slate-800">{reportLongDate.format(new Date(`${point.date}T12:00:00Z`))}</p>
         <div className="mt-3 space-y-2 text-xs">
           <div className="flex items-center justify-between gap-6"><span className="flex items-center gap-2 text-slate-500"><span className="h-2 w-2 rounded-full bg-blue-600" />Ventas</span><strong className="text-slate-800">{formatMoney(point.sales)}</strong></div>
-          <div className="flex items-center justify-between gap-6"><span className="text-slate-500">Costo</span><strong className="text-slate-700">{formatMoney(point.total_cost)}</strong></div>
-          <div className="flex items-center justify-between gap-6"><span className="flex items-center gap-2 text-slate-500"><span className="h-2 w-2 rounded-full bg-emerald-500" />Ganancia</span><strong className={Number(point.gross_profit) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{formatMoney(point.gross_profit)}</strong></div>
+          <div className="flex items-center justify-between gap-6"><span className="text-slate-500">Costo histórico</span><strong className="text-slate-700">{formatMoney(point.total_cost)}</strong></div>
+          <div className="flex items-center justify-between gap-6"><span className="flex items-center gap-2 text-slate-500"><span className="h-2 w-2 rounded-full bg-emerald-500" />Ganancia bruta estimada</span><strong className={Number(point.gross_profit) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{formatMoney(point.gross_profit)}</strong></div>
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-500">
           <span>{point.sales_count} {point.sales_count === 1 ? 'venta' : 'ventas'}</span>
@@ -119,11 +119,11 @@ function SalesChart({ data }: { data: DashboardAnalytics['daily_sales'] }) {
           <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />Ventas
         </button>
         <button type="button" aria-pressed={visible.profit} onClick={() => toggleSeries('profit')} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-semibold transition-colors ${visible.profit ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-400'}`}>
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Ganancia
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Ganancia bruta estimada
         </button>
         <span className="ml-auto hidden text-[11px] text-slate-600 sm:inline">Pasá el cursor por un día para ver el detalle</span>
       </div>
-      <div className="h-72 w-full" role="img" aria-label="Gráfico interactivo de ventas y ganancia por día">
+      <div className="h-72 w-full" role="img" aria-label="Gráfico interactivo de ventas y ganancia bruta estimada por día">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 12, right: 8, bottom: 4, left: 0 }} accessibilityLayer>
             <defs>
@@ -138,7 +138,7 @@ function SalesChart({ data }: { data: DashboardAnalytics['daily_sales'] }) {
             <ReferenceLine y={0} stroke="#CBD5E1" />
             <Tooltip content={ChartTooltip} cursor={{ stroke: '#94A3B8', strokeWidth: 1, strokeDasharray: '4 4' }} isAnimationActive="auto" />
             {visible.sales && <Area type="monotone" dataKey="salesValue" name="Ventas" stroke="#2563EB" strokeWidth={3} fill="url(#salesGradient)" activeDot={{ r: 6, strokeWidth: 3, stroke: '#FFFFFF', fill: '#2563EB' }} isAnimationActive={false} />}
-            {visible.profit && <Line type="monotone" dataKey="profitValue" name="Ganancia" stroke="#059669" strokeWidth={3} dot={false} activeDot={{ r: 5, strokeWidth: 3, stroke: '#FFFFFF', fill: '#059669' }} isAnimationActive={false} />}
+            {visible.profit && <Line type="monotone" dataKey="profitValue" name="Ganancia bruta estimada" stroke="#059669" strokeWidth={3} dot={false} activeDot={{ r: 5, strokeWidth: 3, stroke: '#FFFFFF', fill: '#059669' }} isAnimationActive={false} />}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -250,15 +250,16 @@ export function DashboardView({ products, onOpenProducts, onOpenPurchase, onOpen
           <div className="mt-2"><Variation value={data.selected_period.sales_change_pct} label="vs. período anterior" /></div>
         </article>
         <article className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm" data-testid="metric-period-profit">
-          <div className="flex items-center justify-between"><span className="text-sm font-medium text-emerald-800">Ganancia bruta</span><span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-emerald-700">{data.selected_period.margin_pct === null ? 'Sin margen' : `${Number(data.selected_period.margin_pct).toLocaleString('es-AR')}%`}</span></div>
+          <div className="flex items-center justify-between"><span className="text-sm font-medium text-emerald-800">Ganancia bruta estimada</span><span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-emerald-700">{data.selected_period.margin_pct === null ? 'Sin margen' : `${Number(data.selected_period.margin_pct).toLocaleString('es-AR')}%`}</span></div>
           <p className="mt-4 text-2xl font-bold tracking-tight text-emerald-800">{formatMoney(data.selected_period.gross_profit)}</p>
           <div className="mt-2"><Variation value={data.selected_period.profit_change_pct} label="vs. período anterior" /></div>
+          <p className="mt-2 text-xs leading-5 text-emerald-800/80">No equivale a ganancia neta: no descuenta impuestos, comisiones ni gastos operativos.</p>
         </article>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.8fr)]">
         <article className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-5"><h2 className="text-lg font-bold text-slate-800">Ventas y ganancia por día</h2><p className="mt-1 text-xs text-slate-500">Importes confirmados por el servidor.</p></div>
+          <div className="mb-5"><h2 className="text-lg font-bold text-slate-800">Ventas y ganancia bruta estimada por día</h2><p className="mt-1 text-xs text-slate-500">Importes y costos históricos confirmados por el servidor.</p></div>
           <SalesChart data={data.daily_sales} />
         </article>
         <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" data-testid="low-stock-panel">
@@ -295,7 +296,7 @@ export function DashboardView({ products, onOpenProducts, onOpenPurchase, onOpen
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 p-5"><h2 className="font-bold text-slate-800">Últimas ventas</h2></div>
-          {data.recent_sales.length === 0 ? <p className="p-6 text-sm text-slate-500">La primera venta aparecerá acá.</p> : <div className="divide-y divide-slate-100">{data.recent_sales.map(sale => <div key={sale.id} className="flex items-center justify-between gap-4 px-5 py-3"><div><p className="text-sm font-semibold text-slate-700">{paymentLabels[sale.payment_method]}</p><p className="text-xs text-slate-400">{formatTimestamp(sale.created_at)}</p></div><div className="text-right"><p className="text-sm font-bold text-slate-800">{formatMoney(sale.total_amount)}</p><p className="text-xs text-emerald-600">+ {formatMoney(sale.gross_profit)}</p></div></div>)}</div>}
+          {data.recent_sales.length === 0 ? <p className="p-6 text-sm text-slate-500">La primera venta aparecerá acá.</p> : <div className="divide-y divide-slate-100">{data.recent_sales.map(sale => <div key={sale.id} className="flex items-center justify-between gap-4 px-5 py-3"><div><p className="text-sm font-semibold text-slate-700">{paymentLabels[sale.payment_method]}</p><p className="text-xs text-slate-400">{formatTimestamp(sale.created_at)}</p></div><div className="text-right"><p className="text-sm font-bold text-slate-800">{formatMoney(sale.total_amount)}</p><p className="text-xs text-emerald-600" title="Ganancia bruta estimada">Ganancia bruta estimada: {formatMoney(sale.gross_profit)}</p></div></div>)}</div>}
         </article>
         <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 p-5"><h2 className="font-bold text-slate-800">Últimas compras</h2></div>

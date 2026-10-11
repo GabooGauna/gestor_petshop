@@ -35,9 +35,9 @@ debe ser descartable y nunca la base compartida.
 
 ## Contratos de base y RLS
 
-Después de aplicar las migraciones 001-005 en una base aislada y provisionar al menos
-un usuario Auth, ejecutar el script dentro de una transacción que siempre termina en
-`ROLLBACK`:
+Después de aplicar todas las migraciones del proyecto hasta la 020 en una base
+aislada y provisionar al menos un usuario Auth, ejecutar el script dentro de una
+transacción que siempre termina en `ROLLBACK`:
 
 ```powershell
 $env:PGOPTIONS='-c petstock.environment=e2e'
@@ -46,5 +46,6 @@ npm run test:db:isolated
 ```
 
 El script comprueba matriz anon/authenticated, rechazo de escritura directa, compra
-`10 × 20 kg`, precisión de venta por importe, rollback por stock insuficiente,
-validaciones, atomicidad de merma/ajuste y reconciliación del Kardex.
+`10 × 20 kg`, precisión de las cuatro modalidades de venta, último costo de compra,
+snapshots e inmutabilidad histórica, lectura de rentabilidad, rollback por stock
+insuficiente, validaciones, atomicidad de merma/ajuste y reconciliación del Kardex.

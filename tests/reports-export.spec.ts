@@ -35,6 +35,8 @@ test.describe('Reportes — exportación y filtros', () => {
     expect(sheet.getCell('C1').value).toBe('PRODUCTOS / MEDIOS DE PAGO');
     expect(sheet.getCell('A2').value).toBe('Período');
     expect(sheet.getCell('B2').value).toBe('Fecha de venta');
+    expect(sheet.getCell('I2').value).toBe('Costo histórico');
+    expect(sheet.getCell('J2').value).toBe('Ganancia bruta estimada');
     expect(sheet.getCell('A3').value).toMatch(/^\d{2}\/\d{2}\/\d{4} - \d{2}\/\d{2}\/\d{4}$/);
     expect(sheet.getCell('B3').value).toBeInstanceOf(Date);
     expect((sheet.getCell('B3').value as Date).toISOString()).toBe('2026-10-10T10:30:00.000Z');

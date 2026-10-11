@@ -13,24 +13,19 @@ test.describe('Inicio — resumen analítico', () => {
     await expect(chart.getByText('04-oct')).toBeVisible();
     await expect(chart.getByText('10-oct')).toBeVisible();
 
-    const plot = chart.locator('.recharts-wrapper');
-    const box = await plot.boundingBox();
-    expect(box).not.toBeNull();
-    if (!box) return;
-    await page.mouse.move(box.x + box.width * 0.58, box.y + box.height * 0.45);
-
     const tooltip = page.getByTestId('sales-chart-tooltip');
+    await chart.locator('.recharts-line-curve').first().hover({ force: true });
     await expect(tooltip).toBeVisible();
     await expect(tooltip.getByText('Ventas', { exact: true })).toBeVisible();
-    await expect(tooltip.getByText('Costo', { exact: true })).toBeVisible();
-    await expect(tooltip.getByText('Ganancia', { exact: true })).toBeVisible();
+    await expect(tooltip.getByText('Costo histórico', { exact: true })).toBeVisible();
+    await expect(tooltip.getByText('Ganancia bruta estimada', { exact: true })).toBeVisible();
     await expect(tooltip.getByText(/ventas?$/)).toBeVisible();
     await expect(tooltip.getByText(/% de margen$/)).toBeVisible();
   });
 
   test('permite comparar u ocultar series sin dejar el gráfico vacío', async ({ page }) => {
     const sales = page.getByRole('button', { name: 'Ventas', exact: true });
-    const profit = page.getByRole('button', { name: 'Ganancia', exact: true });
+    const profit = page.getByRole('button', { name: 'Ganancia bruta estimada', exact: true });
     await expect(sales).toHaveAttribute('aria-pressed', 'true');
     await profit.click();
     await expect(profit).toHaveAttribute('aria-pressed', 'false');

@@ -89,7 +89,7 @@ function addProfitabilitySheet(
     { key: 'period', width: 25 }, { key: 'saleDate', width: 23 },
     { key: 'product', width: 31 }, { key: 'presentation', width: 25 },
     { key: 'type', width: 14 }, { key: 'unit', width: 10 }, { key: 'quantity', width: 13 },
-    { key: 'revenue', width: 17 }, { key: 'cost', width: 17 }, { key: 'profit', width: 18 },
+    { key: 'revenue', width: 17 }, { key: 'cost', width: 18 }, { key: 'profit', width: 25 },
     { key: 'margin', width: 12 }, { key: 'payment', width: 21 },
   ];
   sheet.mergeCells('A1:B1');
@@ -101,7 +101,7 @@ function addProfitabilitySheet(
   sheet.getRow(1).height = 28;
 
   const header = sheet.getRow(2);
-  header.values = ['Período', 'Fecha de venta', 'Producto', 'Presentación', 'Tipo', 'Unidad', 'Cantidad', 'Facturación', 'Costo', 'Ganancia bruta', 'Margen', 'Medio de pago'];
+  header.values = ['Período', 'Fecha de venta', 'Producto', 'Presentación', 'Tipo', 'Unidad', 'Cantidad', 'Facturación', 'Costo histórico', 'Ganancia bruta estimada', 'Margen', 'Medio de pago'];
   header.height = 25;
   header.eachCell(cell => {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_NAVY } };

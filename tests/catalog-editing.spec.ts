@@ -43,4 +43,42 @@ test.describe('Catálogo — edición de categoría', () => {
     await expect(page.getByRole('table').getByText(nextCategory.name, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: `Editar categoría de ${mockCatalog.products[0].name}` })).toBeVisible();
   });
+
+  test('mantiene el último costo de compra como solo lectura y no lo envía al editar', async ({ page }) => {
+    const product = mockCatalog.products[0];
+    const presentation = product.product_presentations[0];
+    let patchBody: unknown;
+
+    await installMockBackend(page);
+    await page.route('**/rest/v1/product_presentations*', async route => {
+      if (route.request().method() === 'PATCH') {
+        patchBody = route.request().postDataJSON();
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ...presentation, ...(patchBody as object) }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await loginWithMockUser(page);
+    await page.getByRole('button', { name: 'Productos', exact: true }).click();
+    await page.getByTestId(`toggle-presentations-${product.id}`).click();
+    await page.getByRole('button', { name: `Editar presentación ${presentation.name}` }).click();
+
+    const currentCost = page.getByTestId(`current-cost-${presentation.id}`);
+    await expect(currentCost).toContainText('Costo de reposición vigente');
+    await expect(currentCost).toContainText('$25.000');
+    await expect(page.getByText('El costo vigente se actualiza únicamente al confirmar una compra.')).toBeVisible();
+    await expect(currentCost.locator('input')).toHaveCount(0);
+
+    await page.getByTestId(`edit-price-bulk-${presentation.id}`).fill('36000');
+    await page.getByTestId(`save-presentation-${presentation.id}`).click();
+
+    await expect.poll(() => patchBody).toBeTruthy();
+    expect(patchBody).toMatchObject({ name: presentation.name, price: 36000, weight_kg: 20 });
+    expect(patchBody).not.toHaveProperty('cost');
+  });
 });

@@ -64,6 +64,11 @@ begin
   exception when insufficient_privilege then null;
   end;
   begin
+    update public.product_presentations set cost=1 where id='10000000-0000-4000-8000-000000000005';
+    raise exception 'ASSERT_DIRECT_REPLACEMENT_COST_UPDATE_WAS_ALLOWED';
+  exception when insufficient_privilege then null;
+  end;
+  begin
     insert into public.sales(total_amount,total_cost,payment_method) values(1,0,'efectivo');
     raise exception 'ASSERT_DIRECT_SALE_INSERT_WAS_ALLOWED';
   exception when insufficient_privilege then null;
@@ -113,7 +118,7 @@ end $$;
 
 -- Amount mode: server derives quantity, price and historical unit cost.
 do $$
-declare v jsonb;
+declare v jsonb; v_item public.sale_items%rowtype;
 begin
   v := public.process_sale('transferencia','[{
     "presentation_id":"10000000-0000-4000-8000-000000000005",
@@ -124,6 +129,17 @@ begin
   then raise exception 'ASSERT_AMOUNT_SALE_PRECISION: %',v; end if;
   if (select payment_method from public.sales where id=(v->>'sale_id')::uuid) <> 'transferencia'
   then raise exception 'ASSERT_PAYMENT_METHOD'; end if;
+  select * into strict v_item
+  from public.sale_items
+  where id = (v#>>'{items,0,sale_item_id}')::uuid;
+  if v_item.cost <> 2142.50
+    or v_item.replacement_cost_snapshot <> 25000.00
+    or v_item.presentation_weight_snapshot <> 20.000
+    or v_item.cost_basis <> 'last_purchase'
+    or v#>>'{items,0,replacement_cost_snapshot}' <> '25000.00'
+    or v#>>'{items,0,presentation_weight_snapshot}' <> '20.000'
+    or v#>>'{items,0,cost_basis}' <> 'last_purchase'
+  then raise exception 'ASSERT_AMOUNT_SALE_COST_SNAPSHOT: %, %', v, row_to_json(v_item); end if;
 end $$;
 
 -- Invalid payloads are rejected before durable side effects.
@@ -208,6 +224,127 @@ begin
     or (select quantity from public.inventory_movements
         where presentation_id = v_presentation_id and reference_type = 'opening_balance') <> 2.500
   then raise exception 'ASSERT_PRESENTATION_OPENING_BALANCE: %', v; end if;
+end $$;
+
+-- Last-purchase replacement cost is shared by every sale mode. Every line keeps
+-- the definitive rounded cost and its operands after later purchases change the
+-- current replacement cost. Profitability reads those historical line costs.
+do $$
+declare
+  v_weight_sale jsonb;
+  v_package_sale jsonb;
+  v_unit_sale jsonb;
+  v_new_weight_sale jsonb;
+  v_new_package_sale jsonb;
+  v_new_unit_sale jsonb;
+  v_purchase jsonb;
+  v_weight_item_id uuid;
+  v_package_item_id uuid;
+  v_unit_item_id uuid;
+  v_report jsonb;
+  v_report_cost numeric;
+  v_stored_cost numeric;
+  v_day date := (current_timestamp at time zone 'America/Argentina/Buenos_Aires')::date;
+begin
+  v_weight_sale := public.process_sale(
+    'efectivo',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000005","mode":"weight","quantity":"2.555"}]'::jsonb
+  );
+  v_package_sale := public.process_sale(
+    'efectivo',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000005","mode":"package","quantity":"1"}]'::jsonb
+  );
+  v_unit_sale := public.process_sale(
+    'efectivo',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000006","mode":"unit","quantity":"1"}]'::jsonb
+  );
+
+  if v_weight_sale->>'total_cost' <> '3193.75'
+    or v_package_sale->>'total_cost' <> '25000.00'
+    or v_unit_sale->>'total_cost' <> '5000.00'
+    or v_unit_sale#>>'{items,0,cost_basis}' <> 'opening_cost'
+    or v_unit_sale#>'{items,0,presentation_weight_snapshot}' is distinct from 'null'::jsonb
+  then
+    raise exception 'ASSERT_ALL_SALE_MODES_OPENING_COST: %, %, %',
+      v_weight_sale, v_package_sale, v_unit_sale;
+  end if;
+
+  v_weight_item_id := (v_weight_sale#>>'{items,0,sale_item_id}')::uuid;
+  v_package_item_id := (v_package_sale#>>'{items,0,sale_item_id}')::uuid;
+  v_unit_item_id := (v_unit_sale#>>'{items,0,sale_item_id}')::uuid;
+
+  v_purchase := public.process_purchase(
+    '10000000-0000-4000-8000-000000000013', 'E2E-NEW-WEIGHT-COST',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000005","quantity":"1","unit_cost":"28000.00"}]'::jsonb
+  );
+  perform public.process_purchase(
+    '10000000-0000-4000-8000-000000000013', 'E2E-NEW-UNIT-COST',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000006","quantity":"1","unit_cost":"5500.00"}]'::jsonb
+  );
+
+  if v_purchase#>>'{items,0,unit_cost}' <> '28000.00'
+    or (select cost from public.product_presentations where id = '10000000-0000-4000-8000-000000000005') <> 28000.00
+    or (select cost from public.product_presentations where id = '10000000-0000-4000-8000-000000000006') <> 5500.00
+  then raise exception 'ASSERT_PURCHASE_DID_NOT_REPLACE_COST: %', v_purchase; end if;
+
+  if (select cost from public.sale_items where id = v_weight_item_id) <> 3193.75
+    or (select replacement_cost_snapshot from public.sale_items where id = v_weight_item_id) <> 25000.00
+    or (select presentation_weight_snapshot from public.sale_items where id = v_weight_item_id) <> 20.000
+    or (select cost_basis from public.sale_items where id = v_weight_item_id) <> 'last_purchase'
+    or (select cost from public.sale_items where id = v_package_item_id) <> 25000.00
+    or (select replacement_cost_snapshot from public.sale_items where id = v_package_item_id) <> 25000.00
+    or (select presentation_weight_snapshot from public.sale_items where id = v_package_item_id) <> 20.000
+    or (select cost_basis from public.sale_items where id = v_package_item_id) <> 'last_purchase'
+    or (select cost from public.sale_items where id = v_unit_item_id) <> 5000.00
+    or (select replacement_cost_snapshot from public.sale_items where id = v_unit_item_id) <> 5000.00
+    or (select presentation_weight_snapshot from public.sale_items where id = v_unit_item_id) is not null
+    or (select cost_basis from public.sale_items where id = v_unit_item_id) <> 'opening_cost'
+  then raise exception 'ASSERT_HISTORICAL_COST_CHANGED_AFTER_PURCHASE'; end if;
+
+  v_new_weight_sale := public.process_sale(
+    'efectivo',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000005","mode":"amount","amount":"3000.00"}]'::jsonb
+  );
+  v_new_package_sale := public.process_sale(
+    'efectivo',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000005","mode":"package","quantity":"1"}]'::jsonb
+  );
+  v_new_unit_sale := public.process_sale(
+    'efectivo',
+    '[{"presentation_id":"10000000-0000-4000-8000-000000000006","mode":"unit","quantity":"1"}]'::jsonb
+  );
+
+  if v_new_weight_sale->>'total_cost' <> '2399.60'
+    or v_new_weight_sale#>>'{items,0,replacement_cost_snapshot}' <> '28000.00'
+    or v_new_weight_sale#>>'{items,0,cost_basis}' <> 'last_purchase'
+    or v_new_package_sale->>'total_cost' <> '28000.00'
+    or v_new_unit_sale->>'total_cost' <> '5500.00'
+    or v_new_unit_sale#>>'{items,0,cost_basis}' <> 'last_purchase'
+  then
+    raise exception 'ASSERT_LATEST_PURCHASE_COST_NOT_USED: %, %, %',
+      v_new_weight_sale, v_new_package_sale, v_new_unit_sale;
+  end if;
+
+  v_report := public.get_profitability_detail_report(v_day, v_day);
+  select coalesce(sum((row->>'total_cost')::numeric), 0)
+  into v_report_cost
+  from jsonb_array_elements(v_report) row;
+  select coalesce(sum(cost), 0)
+  into v_stored_cost
+  from public.sale_items si
+  join public.sales s on s.id = si.sale_id
+  where s.created_at >= v_day::timestamp at time zone 'America/Argentina/Buenos_Aires'
+    and s.created_at < (v_day + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires';
+  if v_report_cost <> v_stored_cost then
+    raise exception 'ASSERT_PROFITABILITY_RECALCULATED_CURRENT_COST: report %, stored %',
+      v_report_cost, v_stored_cost;
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(v_report) row
+    where (row->>'gross_profit')::numeric
+      <> (row->>'total_amount')::numeric - (row->>'total_cost')::numeric
+  ) then raise exception 'ASSERT_GROSS_PROFIT_SEMANTICS'; end if;
 end $$;
 
 -- Product removal is logical even with stock and transaction history. Historical
@@ -314,4 +451,18 @@ begin
 end $$;
 
 reset role;
+
+-- Even privileged application code cannot rewrite confirmed sale economics.
+do $$
+declare v_item_id uuid;
+begin
+  select id into strict v_item_id from public.sale_items order by created_at, id limit 1;
+  begin
+    update public.sale_items set cost = cost + 0.01 where id = v_item_id;
+    raise exception 'ASSERT_SALE_ITEM_SNAPSHOT_UPDATE_WAS_ALLOWED';
+  exception when raise_exception then
+    if sqlerrm <> 'SALE_ITEM_SNAPSHOT_IMMUTABLE' then raise; end if;
+  end;
+end $$;
+
 rollback;

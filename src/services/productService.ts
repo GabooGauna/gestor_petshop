@@ -6,6 +6,7 @@ type ProductInsert = Database['public']['Tables']['products']['Insert'];
 type ProductUpdate = Database['public']['Tables']['products']['Update'];
 type PresentationInsert = Database['public']['Tables']['product_presentations']['Insert'];
 type PresentationUpdate = Database['public']['Tables']['product_presentations']['Update'];
+export type CatalogPresentationUpdate = Pick<PresentationUpdate, 'name' | 'weight_kg' | 'price' | 'price_per_kg'>;
 type Category = Database['public']['Tables']['categories']['Row'];
 type MoneyRpcValue = `${number}`;
 
@@ -268,10 +269,16 @@ export const productService = {
     return created;
   },
 
-  async updatePresentation(id: string, updates: PresentationUpdate) {
+  async updatePresentation(id: string, updates: CatalogPresentationUpdate) {
+    const catalogUpdates: CatalogPresentationUpdate = {
+      ...(updates.name !== undefined && { name: updates.name }),
+      ...(updates.weight_kg !== undefined && { weight_kg: updates.weight_kg }),
+      ...(updates.price !== undefined && { price: updates.price }),
+      ...(updates.price_per_kg !== undefined && { price_per_kg: updates.price_per_kg }),
+    };
     const { data, error } = await supabase
       .from('product_presentations')
-      .update(updates)
+      .update(catalogUpdates)
       .eq('id', id)
       .select()
       .single();

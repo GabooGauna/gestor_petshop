@@ -37,6 +37,37 @@ La migración `202610100008_stage_05_analytics_contract.sql` agrega índices y c
 RPC de sólo lectura. Los RPC agregan en PostgreSQL con `NUMERIC` y serializan importes
 y cantidades como strings.
 
+La migración local
+`202610110020_last_purchase_cost_snapshot.sql` completa el contrato transaccional:
+impide editar el costo de reposición directamente, conserva en cada renglón nuevo
+el costo de presentación y peso usados, y verifica que `sale_items.cost` coincida
+con esos operandos. Debe aplicarse junto con la adaptación Backend; no se aplica
+remotamente desde esta etapa.
+
+Antes de cualquier aplicación remota debe ejecutarse una auditoría de sólo lectura
+que compare `product_presentations.cost` con el `unit_cost` de su compra más
+reciente. La migración no reescribe costos ni completa snapshots heredados. Toda
+corrección de datos reales requiere autorización separada.
+
+## Contrato de costo y rentabilidad
+
+- Fuente vigente: `product_presentations.cost`, inicializada al crear la
+  presentación y reemplazada exclusivamente por `process_purchase` al confirmar
+  una compra. No hay promedio ponderado.
+- Snapshot de venta: `sale_items.cost` es el costo monetario definitivo;
+  `replacement_cost_snapshot`, `presentation_weight_snapshot` y `cost_basis`
+  conservan los operandos y la política aplicados. En filas heredadas los nuevos
+  campos pueden ser `null`; no se inventa una procedencia histórica. `cost_basis`
+  distingue `opening_cost` (aún sin compras) de `last_purchase`.
+- Fraccionados (`amount`, `weight`): costo calculado sobre los kg definitivos que
+  salen del stock, usando costo de presentación dividido por peso de presentación.
+- Completos (`package`, `unit`): costo calculado como cantidad comercial por costo
+  de presentación/unidad.
+- Redondeo: PostgreSQL `NUMERIC`, tres decimales para stock y dos para el costo
+  monetario de cada línea; los totales suman líneas ya redondeadas.
+- `gross_profit` siempre significa **ganancia bruta estimada**. Ganancia neta no
+  forma parte del modelo actual y no debe inferirse ni etiquetarse como disponible.
+
 ## Contratos RPC
 
 ### `get_dashboard_analytics(p_from date, p_to date) -> jsonb`
@@ -171,6 +202,11 @@ vacíos instructivos y movimiento sólo al cambiar filtros.
 | Venta hoy BA | Impacta hoy, serie, método y rentabilidad |
 | Venta 00:30 UTC | Pertenece al día anterior en Buenos Aires |
 | Costo histórico | Ganancia usa `sale_items.cost`, no costo actual |
+| Compra posterior | Actualiza costo vigente pero no snapshots ni rentabilidad previa |
+| Edición de catálogo | No puede modificar el último costo de compra |
+| Venta fraccionada | Usa kg definitivos a 3 decimales y redondea costo una vez a 2 |
+| Bolsa/unidad | Usa cantidad comercial por costo de reposición vigente |
+| Etiquetas | Muestran "Ganancia bruta estimada"; nunca "ganancia neta" |
 | Período anterior cero | Variación `null`, nunca infinito |
 | Presentación igual al umbral | Aparece como stock bajo |
 | Presentación agotada con otra variante disponible | La agotada permanece visible |

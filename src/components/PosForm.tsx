@@ -102,7 +102,7 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
       await Swal.fire({
         icon: 'success',
         title: 'Venta cobrada',
-        text: `${currency.format(Number(result.total_amount))} · ${PAYMENTS.find(option => option.id === payment)?.label ?? 'Pago registrado'}`,
+        text: `Importe definitivo: ${currency.format(Number(result.total_amount))} · ${PAYMENTS.find(option => option.id === payment)?.label ?? 'Pago registrado'}. Confirmado por el servidor.`,
         confirmButtonText: 'Nueva venta',
         confirmButtonColor: '#059669',
       });
@@ -117,7 +117,7 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
         {onCancel && <button type="button" onClick={onCancel} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Volver"><ArrowLeft className="h-5 w-5" /></button>}
         <div>
           <h2 className="text-xl font-bold text-slate-800">Punto de venta</h2>
-          <p className="text-xs text-slate-500">El servidor calcula precios, costos y stock definitivo</p>
+          <p className="text-xs text-slate-500">La pantalla muestra estimaciones; el servidor confirma importes, costos y stock definitivos.</p>
         </div>
       </header>
 
@@ -183,6 +183,7 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
                   <div><span className="text-slate-500">Stock a descontar</span><strong className="block text-lg text-blue-700">{formatStockQuantity(preview.quantity, mode)}</strong></div>
                   <div><span className="text-slate-500">Importe estimado</span><strong className="block text-lg text-emerald-700">${preview.subtotal.toFixed(2)}</strong></div>
                   <div className="flex items-center gap-2 border-t border-slate-100 pt-3 text-slate-600 sm:col-span-2"><Calculator className="h-4 w-4" />Costo estimado: ${preview.cost.toFixed(2)}</div>
+                  <p className="border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500 sm:col-span-2">Vista previa local. Al cobrar, el servidor recalcula y registra los valores definitivos con el último costo de compra vigente.</p>
                 </div>
               )
             )}
@@ -214,6 +215,7 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
           <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex justify-between text-sm text-slate-500"><span>Costo estimado</span><span>${totals.cost.toFixed(2)}</span></div>
             <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3"><span className="text-base text-slate-800 sm:text-lg">Total estimado</span><strong className="text-2xl text-emerald-600 sm:text-3xl">${totals.amount.toFixed(2)}</strong></div>
+            <p className="mt-3 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500">El total y el costo definitivos se confirman al cobrar.</p>
           </div>
           <button type="button" onClick={() => void processSale()} disabled={!items.length || loading} className="mt-4 rounded-xl bg-[#10B981] px-4 py-4 text-lg font-bold text-white hover:bg-[#059669] disabled:opacity-50">{loading ? 'Procesando…' : 'Cobrar ticket'}</button>
         </section>

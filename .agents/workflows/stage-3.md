@@ -11,10 +11,13 @@ description:
 
 ## ROL 2: [Backend]
 1. Crea o actualiza `src/services/saleService.ts`.
-2. Implementa las fórmulas:
+2. Implementa las fórmulas con el último costo de compra vigente y persiste el
+   snapshot de costo en cada renglón:
    - Importe: `Monto_Cobrado / Precio_Kg = Kg_a_Descontar`.
    - Cantidad: `Cantidad_Kg * Precio_Kg = Subtotal`.
-   - Ganancia: `Subtotal - (Kg_Vendidos * Costo_Kg)`.
+   - Fraccionado: `Costo = round((Costo_Presentacion / Peso_Presentacion) * Kg_Descontados, 2)`.
+   - Bolsa/unidad: `Costo = round(Cantidad_Comercial * Costo_Presentacion, 2)`.
+   - Ganancia bruta estimada: `Subtotal - Costo`.
 3. Garantiza la atomicidad de la transacción (si la venta falla, no se descuenta el stock).
 4. Pasa al [Reviewer].
 

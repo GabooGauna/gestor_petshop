@@ -13,9 +13,17 @@ Secciones del PRD asociadas: 14, 20, 21 y 23.
 - Los filtros reciben fechas civiles inclusivas (`desde` y `hasta`).
 - Dinero se calcula en PostgreSQL con `NUMERIC` y se expone como texto decimal con
   dos posiciones. Cantidades de stock se exponen con tres posiciones.
-- `ganancia_bruta = importe_vendido - costo_historico_vendido`.
+- `costo_historico_vendido` es la suma de `sale_items.cost`, congelado al confirmar
+  cada venta con la política de último costo de compra. Nunca se reconstruye desde
+  `product_presentations.cost`, compras posteriores ni el costo actual.
+- `ganancia_bruta_estimada = importe_vendido - costo_historico_vendido`.
+  Los contratos conservan la clave técnica `gross_profit`, pero toda etiqueta
+  visible y exportación debe decir **Ganancia bruta estimada**.
 - `margen_pct = ganancia_bruta / importe_vendido * 100`; es `null` cuando el importe
   vendido es cero.
+- No se calcula ganancia neta. Si se la menciona en una ayuda o estado vacío, debe
+  indicarse explícitamente que no está disponible porque esta etapa no registra
+  impuestos, comisiones ni gastos operativos.
 - Las variaciones comparan con el período inmediatamente anterior de igual cantidad
   de días; son `null` cuando el período anterior vale cero.
 - Stock bajo se evalúa por presentación de cada producto activo, con la regla exacta
@@ -42,7 +50,7 @@ El período inicial del dashboard son los últimos 7 días, incluyendo hoy.
 
 ### Reportes
 
-- Rentabilidad por producto y período: ventas, costo histórico, ganancia bruta y
+- Rentabilidad por producto y período: ventas, costo histórico, ganancia bruta estimada y
   margen. No se recalcula el costo usando el costo actual de la presentación.
 - Ventas por método de pago y período, incluyendo métodos sin movimientos con cero.
 - Movimientos globales filtrables por período, tipo y producto, paginados y ordenados

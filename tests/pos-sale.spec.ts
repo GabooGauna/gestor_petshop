@@ -22,6 +22,7 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
   test('expone las cuatro modalidades y los seis medios de pago', async ({ page }) => {
     for (const mode of ['Por unidad', 'Por peso', 'Por importe', 'Bolsa completa']) await expect(page.getByRole('button', { name: mode })).toBeVisible();
     await expect(page.getByLabel('Medio de pago').locator('option')).toHaveText(['Efectivo', 'Transferencia', 'Débito', 'Crédito', 'Mercado Pago', 'Otro']);
+    await expect(page.getByText('La pantalla muestra estimaciones; el servidor confirma importes, costos y stock definitivos.')).toBeVisible();
   });
 
   test('muestra un ejemplo acorde a cada modalidad', async ({ page }) => {
@@ -43,6 +44,7 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
     await expect(result).toContainText('1.714 kg');
     await expect(result).toContainText('$3000.00');
     await expect(result).toContainText('$2142.50');
+    await expect(result).toContainText('Vista previa local');
   });
 
   test('por peso: 2,500 kg calcula $4.375 y costo $3.125', async ({ page }) => {
@@ -113,7 +115,7 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
     await expect.poll(() => rpcBody).toBeTruthy();
     expect(rpcBody).toEqual({ p_payment_method: 'transferencia', p_items: [{ presentation_id: mockCatalog.products[0].product_presentations[0].id, mode: 'amount', amount: '3000.00' }] });
     await expect(page.getByRole('heading', { name: 'Venta cobrada' })).toBeVisible();
-    await expect(page.getByText(/\$\s*3\.000,00.*Transferencia/)).toBeVisible();
+    await expect(page.getByText(/Importe definitivo.*\$\s*3\.000,00.*Transferencia.*Confirmado por el servidor/)).toBeVisible();
     await page.getByRole('button', { name: 'Nueva venta' }).click();
     await expect(page.getByText('El ticket está vacío')).toBeVisible();
   });
@@ -153,6 +155,9 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
           unit_price: '8000.00',
           subtotal: '16000.00',
           line_cost: '10000.00',
+          replacement_cost_snapshot: '5000.00',
+          presentation_weight_snapshot: null,
+          cost_basis: 'last_purchase',
           stock_after: '13',
         }],
       }),

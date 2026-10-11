@@ -259,11 +259,14 @@ export type Database = {
         Row: {
           commercial_quantity: number | null
           cost: number
+          cost_basis: string | null
           created_at: string | null
           id: string
           presentation_id: string | null
+          presentation_weight_snapshot: number | null
           product_id: string | null
           quantity: number
+          replacement_cost_snapshot: number | null
           sale_id: string | null
           sale_mode: string | null
           subtotal: number
@@ -272,11 +275,14 @@ export type Database = {
         Insert: {
           commercial_quantity?: number | null
           cost: number
+          cost_basis?: string | null
           created_at?: string | null
           id?: string
           presentation_id?: string | null
+          presentation_weight_snapshot?: number | null
           product_id?: string | null
           quantity: number
+          replacement_cost_snapshot?: number | null
           sale_id?: string | null
           sale_mode?: string | null
           subtotal: number
@@ -285,11 +291,14 @@ export type Database = {
         Update: {
           commercial_quantity?: number | null
           cost?: number
+          cost_basis?: string | null
           created_at?: string | null
           id?: string
           presentation_id?: string | null
+          presentation_weight_snapshot?: number | null
           product_id?: string | null
           quantity?: number
+          replacement_cost_snapshot?: number | null
           sale_id?: string | null
           sale_mode?: string | null
           subtotal?: number

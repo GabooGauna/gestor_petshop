@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
-import { productService } from '../services/productService';
+import { productService, type CatalogPresentationUpdate } from '../services/productService';
 import type { Database } from '../types/database.types';
 import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Plus, Layers, Trash2, Archive } from 'lucide-react';
 import Swal from 'sweetalert2';
-
-type PresentationUpdate = Database['public']['Tables']['product_presentations']['Update'];
 
 interface Presentation {
   id: string;
@@ -36,7 +34,6 @@ interface ProductDetailProps {
 interface EditState {
   name: string;
   priceBulk: string;    // precio de venta del bulto completo
-  cost: string;         // costo del bulto
   margenPct: string;    // margen % extra para venta suelta
   weight_kg: string;
   priceUnit: string;    // solo para tipo 'unit'
@@ -90,7 +87,6 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
     setEditState({
       name: pres.name,
       priceBulk: pres.price > 0 ? String(pres.price) : '',
-      cost: pres.cost > 0 ? String(pres.cost) : '',
       margenPct: String(inferredMargen),
       weight_kg: pres.weight_kg != null ? String(pres.weight_kg) : '',
       priceUnit: pres.price > 0 ? String(pres.price) : '',
@@ -127,10 +123,9 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
         ? calcPricePerKg(priceBulk, weightKg, margenPct)
         : null;
 
-      const updates: PresentationUpdate = {
+      const updates: CatalogPresentationUpdate = {
         name: editState.name,
         price: isWeightProduct ? priceBulk : Number(editState.priceUnit) || 0,
-        cost: Number(editState.cost) || 0,
         ...(isWeightProduct && {
           price_per_kg: pricePerKgCalc || null,
           weight_kg: weightKg || null,
@@ -297,7 +292,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
 
   const previewCostPerKg: number | null = (() => {
     if (!editState || !isWeightProduct) return null;
-    const c = Number(editState.cost);
+    const c = Number(presentations.find(presentation => presentation.id === editingId)?.cost);
     const w = Number(editState.weight_kg);
     if (c <= 0 || w <= 0) return null;
     return c / w;
@@ -498,7 +493,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                             </div>
                           </div>
 
-                          {/* Precio y costo del bulto */}
+                          {/* Precio y costo vigente del bulto */}
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
                               <label className="block text-xs font-semibold text-slate-500 mb-1">
@@ -516,22 +511,17 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                                 />
                               </div>
                             </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 mb-1">
-                                Costo del bulto ($)
-                              </label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                                <input
-                                  type="number" step="0.01" min="0"
-                                  value={editState.cost}
-                                  onChange={e => setProp('cost', e.target.value)}
-                                  className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] outline-none bg-white"
-                                  placeholder="25000"
-                                />
+                            <div data-testid={`current-cost-${pres.id}`}>
+                              <span className="block text-xs font-semibold text-slate-500 mb-1">Costo de reposición vigente</span>
+                              <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-700">
+                                {pres.cost > 0 ? `$${Number(pres.cost).toLocaleString('es-AR')}` : 'Sin costo configurado'}
                               </div>
                             </div>
                           </div>
+
+                          <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] leading-4 text-blue-800 sm:col-span-2">
+                            El costo vigente se actualiza únicamente al confirmar una compra. Las ventas ya registradas conservan el costo histórico utilizado.
+                          </p>
 
                           {/* Margen para venta suelta */}
                           <div>
@@ -608,19 +598,15 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                               />
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">Costo ($)</label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                              <input
-                                type="number" step="0.01" min="0"
-                                value={editState.cost}
-                                onChange={e => setProp('cost', e.target.value)}
-                                className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] outline-none bg-white"
-                                placeholder="0.00"
-                              />
+                          <div data-testid={`current-cost-${pres.id}`}>
+                            <span className="block text-xs font-semibold text-slate-500 mb-1">Costo de reposición vigente</span>
+                            <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-700">
+                              {pres.cost > 0 ? `$${Number(pres.cost).toLocaleString('es-AR')}` : 'Sin costo configurado'}
                             </div>
                           </div>
+                          <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] leading-4 text-blue-800 sm:col-span-2">
+                            El costo vigente se actualiza únicamente al confirmar una compra. Las ventas ya registradas conservan el costo histórico utilizado.
+                          </p>
                         </div>
                       )}
 
