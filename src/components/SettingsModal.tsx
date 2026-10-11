@@ -43,7 +43,7 @@ export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: Setting
             </span>
             <div>
               <h2 id="settings-title" className="text-lg font-semibold text-slate-800">Configuración</h2>
-              <p className="text-sm text-slate-500">Personalizá cómo se ve PetStock.</p>
+              <p className="text-sm text-slate-500">Personalizá cómo se ve Avenida Animal.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Cerrar configuración">

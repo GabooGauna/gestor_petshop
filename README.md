@@ -1,4 +1,4 @@
-# PetStock
+# Avenida Animal
 
 Sistema de gestión de productos, compras, inventario, ventas y rentabilidad para un negocio de alimentos y accesorios para mascotas.
 
@@ -29,4 +29,6 @@ npm run lint
 npx playwright test
 ```
 
-El stage 5 (dashboard y reportes) permanece pendiente.
+El stage 5 incorpora dashboard analítico, reportes filtrables y exportación a Excel de
+rentabilidad (período seleccionado, fecha de venta, presentación y medio de pago) y
+movimientos. Métodos de pago queda como resumen informativo sin una descarga separada.

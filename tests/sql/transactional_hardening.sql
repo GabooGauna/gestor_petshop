@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 
--- Run only against an isolated database after migrations 001-005.
+-- Run only against an isolated database after all project migrations.
 -- Every fixture and mutation is enclosed in one transaction and rolled back.
 begin;
 
@@ -27,7 +27,9 @@ end $$;
 insert into public.categories(id,name) values
   ('10000000-0000-4000-8000-000000000001','E2E Category');
 insert into public.suppliers(id,name) values
-  ('10000000-0000-4000-8000-000000000002','E2E Supplier');
+  ('10000000-0000-4000-8000-000000000002','E2E Supplier'),
+  ('10000000-0000-4000-8000-000000000012','E2E Unused Supplier'),
+  ('10000000-0000-4000-8000-000000000013','E2E Active Supplier');
 insert into public.products(id,name,category_id,type,status,min_stock) values
   ('10000000-0000-4000-8000-000000000003','E2E Weight','10000000-0000-4000-8000-000000000001','weight','active',5),
   ('10000000-0000-4000-8000-000000000004','E2E Unit','10000000-0000-4000-8000-000000000001','unit','active',1);
@@ -152,6 +154,163 @@ begin
   select count(*),coalesce(sum(quantity),0) into v_count,v_sum from public.inventory_movements where presentation_id='10000000-0000-4000-8000-000000000005';
   select stock into v_stock from public.product_presentations where id='10000000-0000-4000-8000-000000000005';
   if v_count <> 5 or v_sum <> v_stock or v_stock <> 238.000 then raise exception 'ASSERT_KARDEX_RECONCILIATION count %, sum %, stock %',v_count,v_sum,v_stock; end if;
+end $$;
+
+-- Supplier removal deletes unused records and archives suppliers with purchase history.
+do $$
+declare v jsonb;
+begin
+  v := public.remove_supplier('10000000-0000-4000-8000-000000000012');
+  if v->>'deleted' <> 'true'
+    or exists (select 1 from public.suppliers where id='10000000-0000-4000-8000-000000000012')
+  then raise exception 'ASSERT_UNUSED_SUPPLIER_NOT_DELETED: %',v; end if;
+
+  v := public.remove_supplier('10000000-0000-4000-8000-000000000002');
+  if v->>'archived' <> 'true'
+    or (select active from public.suppliers where id='10000000-0000-4000-8000-000000000002')
+  then raise exception 'ASSERT_USED_SUPPLIER_NOT_ARCHIVED: %',v; end if;
+
+  begin
+    perform public.process_purchase(
+      '10000000-0000-4000-8000-000000000002','ARCHIVED-SUPPLIER',
+      '[{"presentation_id":"10000000-0000-4000-8000-000000000006","quantity":"1","unit_cost":"5000.00"}]'::jsonb
+    );
+    raise exception 'ASSERT_ARCHIVED_SUPPLIER_ACCEPTED';
+  exception when raise_exception then
+    if sqlerrm <> 'SUPPLIER_NOT_FOUND' then raise; end if;
+  end;
+end $$;
+
+-- Presentation creation preserves exact decimal strings in the RPC response and
+-- records the opening balance in the same transaction.
+do $$
+declare v jsonb; v_presentation_id uuid;
+begin
+  v := public.create_product_presentation(
+    '10000000-0000-4000-8000-000000000003',
+    'E2E Bag 5kg', 5.000, 6250.00, 9000.00, 1800.00, 2.500
+  );
+  v_presentation_id := (v->>'id')::uuid;
+
+  if jsonb_typeof(v->'weight_kg') <> 'string'
+    or jsonb_typeof(v->'cost') <> 'string'
+    or jsonb_typeof(v->'price') <> 'string'
+    or jsonb_typeof(v->'price_per_kg') <> 'string'
+    or jsonb_typeof(v->'stock') <> 'string'
+    or v->>'weight_kg' <> '5.000'
+    or v->>'cost' <> '6250.00'
+    or v->>'price' <> '9000.00'
+    or v->>'price_per_kg' <> '1800.00'
+    or v->>'stock' <> '2.500'
+  then raise exception 'ASSERT_PRESENTATION_DECIMAL_RESPONSE: %', v; end if;
+
+  if (select stock from public.product_presentations where id = v_presentation_id) <> 2.500
+    or (select quantity from public.inventory_movements
+        where presentation_id = v_presentation_id and reference_type = 'opening_balance') <> 2.500
+  then raise exception 'ASSERT_PRESENTATION_OPENING_BALANCE: %', v; end if;
+end $$;
+
+-- Product removal is logical even with stock and transaction history. Historical
+-- rows and presentation stock must remain intact.
+do $$
+declare
+  v jsonb;
+  v_stock numeric;
+  v_sales bigint;
+  v_purchases bigint;
+  v_movements bigint;
+  v_updated bigint;
+begin
+  select stock into v_stock
+  from public.product_presentations
+  where id = '10000000-0000-4000-8000-000000000005';
+  select count(*) into v_sales from public.sale_items
+  where product_id = '10000000-0000-4000-8000-000000000003';
+  select count(*) into v_purchases from public.purchase_items
+  where product_id = '10000000-0000-4000-8000-000000000003';
+  select count(*) into v_movements from public.inventory_movements
+  where product_id = '10000000-0000-4000-8000-000000000003';
+
+  v := public.delete_product('10000000-0000-4000-8000-000000000003');
+
+  if v->>'archived' <> 'true' or v->>'deleted' <> 'false'
+    or (select status from public.products where id = '10000000-0000-4000-8000-000000000003') <> 'inactive'
+    or (select stock from public.product_presentations where id = '10000000-0000-4000-8000-000000000005') <> v_stock
+    or (select count(*) from public.sale_items where product_id = '10000000-0000-4000-8000-000000000003') <> v_sales
+    or (select count(*) from public.purchase_items where product_id = '10000000-0000-4000-8000-000000000003') <> v_purchases
+    or (select count(*) from public.inventory_movements where product_id = '10000000-0000-4000-8000-000000000003') <> v_movements
+  then raise exception 'ASSERT_PRODUCT_LOGICAL_REMOVAL: %', v; end if;
+
+  begin
+    perform public.process_sale(
+      'efectivo',
+      '[{"presentation_id":"10000000-0000-4000-8000-000000000005","mode":"weight","quantity":"0.500"}]'::jsonb
+    );
+    raise exception 'ASSERT_ARCHIVED_PRODUCT_SALE_ALLOWED';
+  exception when raise_exception then
+    if sqlerrm <> 'INACTIVE_PRODUCT' then raise; end if;
+  end;
+
+  begin
+    perform public.process_purchase(
+      '10000000-0000-4000-8000-000000000013',
+      'ARCHIVED-PRODUCT',
+      '[{"presentation_id":"10000000-0000-4000-8000-000000000005","quantity":"1","unit_cost":"25000.00"}]'::jsonb
+    );
+    raise exception 'ASSERT_ARCHIVED_PRODUCT_PURCHASE_ALLOWED';
+  exception when raise_exception then
+    if sqlerrm <> 'INACTIVE_PRODUCT' then raise; end if;
+  end;
+
+  begin
+    perform public.create_product_presentation(
+      '10000000-0000-4000-8000-000000000003',
+      'Archived variant', 1.000, 1.00, 1.00, 1.00, 0.000
+    );
+    raise exception 'ASSERT_ARCHIVED_PRODUCT_PRESENTATION_CREATED';
+  exception when raise_exception then
+    if sqlerrm <> 'PRODUCT_NOT_FOUND' then raise; end if;
+  end;
+
+  begin
+    perform public.record_shrinkage(
+      '10000000-0000-4000-8000-000000000005', 0.500, 'Archived product mutation'
+    );
+    raise exception 'ASSERT_ARCHIVED_PRODUCT_SHRINKAGE_ALLOWED';
+  exception when raise_exception then
+    if sqlerrm <> 'INACTIVE_PRODUCT' then raise; end if;
+  end;
+
+  begin
+    perform public.record_stock_adjustment(
+      '10000000-0000-4000-8000-000000000005', v_stock + 1, 'Archived product mutation'
+    );
+    raise exception 'ASSERT_ARCHIVED_PRODUCT_ADJUSTMENT_ALLOWED';
+  exception when raise_exception then
+    if sqlerrm <> 'INACTIVE_PRODUCT' then raise; end if;
+  end;
+
+  if (select count(*) from public.sale_items where product_id = '10000000-0000-4000-8000-000000000003') <> v_sales
+    or (select count(*) from public.purchase_items where product_id = '10000000-0000-4000-8000-000000000003') <> v_purchases
+    or (select stock from public.product_presentations where id = '10000000-0000-4000-8000-000000000005') <> v_stock
+    or (select count(*) from public.inventory_movements where product_id = '10000000-0000-4000-8000-000000000003') <> v_movements
+  then raise exception 'ASSERT_ARCHIVED_PRODUCT_TRANSACTION_CHANGED'; end if;
+
+  update public.products
+  set name = 'Archived product edited'
+  where id = '10000000-0000-4000-8000-000000000003';
+  get diagnostics v_updated = row_count;
+  if v_updated <> 0 then
+    raise exception 'ASSERT_ARCHIVED_PRODUCT_DIRECT_UPDATE_ALLOWED';
+  end if;
+
+  update public.product_presentations
+  set price = price + 1
+  where id = '10000000-0000-4000-8000-000000000005';
+  get diagnostics v_updated = row_count;
+  if v_updated <> 0 then
+    raise exception 'ASSERT_ARCHIVED_PRESENTATION_DIRECT_UPDATE_ALLOWED';
+  end if;
 end $$;
 
 reset role;

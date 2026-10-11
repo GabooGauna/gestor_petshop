@@ -345,18 +345,21 @@ export type Database = {
       }
       suppliers: {
         Row: {
+          active: boolean
           contact_info: string | null
           created_at: string | null
           id: string
           name: string
         }
         Insert: {
+          active?: boolean
           contact_info?: string | null
           created_at?: string | null
           id?: string
           name: string
         }
         Update: {
+          active?: boolean
           contact_info?: string | null
           created_at?: string | null
           id?: string
@@ -369,12 +372,71 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_product_presentation: {
+        Args: {
+          p_cost: number | string
+          p_initial_stock: number | string
+          p_name: string
+          p_price: number | string
+          p_price_per_kg: number | string | null
+          p_product_id: string
+          p_weight_kg: number | string | null
+        }
+        Returns: Json
+      }
+      create_product_with_presentation: {
+        Args: {
+          p_brand: string | null
+          p_category_id: string | null
+          p_cost: number | string
+          p_initial_stock: number | string
+          p_min_stock: number | string
+          p_name: string
+          p_presentation_name: string
+          p_price: number | string
+          p_price_per_kg: number | string | null
+          p_type: string
+          p_weight_kg: number | string | null
+        }
+        Returns: Json
+      }
       delete_presentation: {
         Args: { p_presentation_id: string }
         Returns: Json
       }
       delete_product: {
         Args: { p_product_id: string }
+        Returns: Json
+      }
+      remove_supplier: {
+        Args: { p_supplier_id: string }
+        Returns: Json
+      }
+      get_dashboard_analytics: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      get_inventory_movement_report: {
+        Args: {
+          p_from: string
+          p_limit?: number
+          p_offset?: number
+          p_product_id?: string
+          p_to: string
+          p_type?: string
+        }
+        Returns: Json
+      }
+      get_payment_method_report: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      get_profitability_detail_report: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      get_product_profitability_report: {
+        Args: { p_from: string; p_to: string }
         Returns: Json
       }
       process_purchase: {

@@ -6,7 +6,7 @@ import { SupplierModal } from './SupplierModal';
 import type { Database } from '../types/database.types';
 import {
   ArrowLeft, Trash2, Plus, Truck, AlertCircle,
-  Layers, Package, FileText, CheckCircle, X
+  Layers, Package, FileText, CheckCircle, Check, X
 } from 'lucide-react';
 
 type Supplier = Database['public']['Tables']['suppliers']['Row'];
@@ -37,12 +37,6 @@ interface PurchaseItemRow {
   presentationId: string;
   quantity: string;
   unitCost: string;
-  // Campos auxiliares si es una nueva presentación creada al vuelo
-  isNewPresentation?: boolean;
-  newPresName?: string;
-  newPresWeightKg?: string;
-  newPresSalePrice?: string;
-  newPresMargenPct?: string;
 }
 
 interface PurchaseFormProps {
@@ -64,6 +58,23 @@ function normalizeMoney(input: string): `${number}` {
   return `${whole}.${fraction.padEnd(2, '0')}` as `${number}`;
 }
 
+function moneyToCents(input: string): bigint {
+  if (!/^\d+(?:\.\d{0,2})?$/.test(input)) return 0n;
+  const [whole, fraction = ''] = input.split('.');
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+}
+
+function purchaseLineSubtotalCents(quantity: string, unitCost: string): bigint {
+  if (!/^\d+$/.test(quantity)) return 0n;
+  return BigInt(quantity) * moneyToCents(unitCost);
+}
+
+function formatCents(cents: bigint): string {
+  const whole = (cents / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const fraction = (cents % 100n).toString().padStart(2, '0');
+  return `${whole},${fraction}`;
+}
+
 export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -79,6 +90,9 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [initialDataWarning, setInitialDataWarning] = useState<string | null>(null);
 
   // Modales y creadores rápidos
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
@@ -98,6 +112,10 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
   const [newProdPrice, setNewProdPrice] = useState('');
   const [newProdMargen, setNewProdMargen] = useState('10');
   const [savingNewProduct, setSavingNewProduct] = useState(false);
+  const [showNewProdCategoryInput, setShowNewProdCategoryInput] = useState(false);
+  const [newProdCategoryName, setNewProdCategoryName] = useState('');
+  const [creatingNewProdCategory, setCreatingNewProdCategory] = useState(false);
+  const [newProdModalError, setNewProdModalError] = useState<string | null>(null);
 
   // Modal para nueva presentación rápida
   const [quickPresRowIndex, setQuickPresRowIndex] = useState<number | null>(null);
@@ -109,18 +127,39 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
   const [savingQuickPres, setSavingQuickPres] = useState(false);
 
   const loadInitialData = async () => {
-    try {
-      const [suppData, prodData, catData] = await Promise.all([
-        supplierService.getSuppliers(),
-        productService.getProducts(),
-        productService.getCategories(),
-      ]);
-      setSuppliers(suppData);
-      setProducts(((prodData ?? []) as Product[]).filter(product => product.status === 'active'));
-      setCategories(catData);
-    } catch (err) {
-      console.error('Error al cargar datos:', err);
+    setCatalogLoading(true);
+    setCatalogError(null);
+    setInitialDataWarning(null);
+
+    const [suppliersResult, productsResult, categoriesResult] = await Promise.allSettled([
+      supplierService.getSuppliers(),
+      productService.getProducts(),
+      productService.getCategories(),
+    ]);
+
+    if (suppliersResult.status === 'fulfilled') {
+      setSuppliers(suppliersResult.value);
+    } else {
+      console.error('Error al cargar proveedores:', suppliersResult.reason);
+      setInitialDataWarning('No se pudieron cargar los proveedores. Podés reintentar o crear uno nuevo.');
     }
+
+    if (productsResult.status === 'fulfilled') {
+      setProducts(((productsResult.value ?? []) as Product[]).filter(product => product.status === 'active'));
+    } else {
+      console.error('Error al cargar productos:', productsResult.reason);
+      setProducts([]);
+      setCatalogError('No se pudieron cargar los productos del local.');
+    }
+
+    if (categoriesResult.status === 'fulfilled') {
+      setCategories(categoriesResult.value);
+    } else {
+      console.error('Error al cargar categorías:', categoriesResult.reason);
+      setInitialDataWarning(current => current ?? 'No se pudieron cargar las categorías para crear productos nuevos.');
+    }
+
+    setCatalogLoading(false);
   };
 
   useEffect(() => {
@@ -150,12 +189,45 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
     }
   };
 
+  const openNewProductModal = () => {
+    setNewProdModalError(null);
+    setShowNewProdCategoryInput(categories.length === 0);
+    setShowNewProductModal(true);
+  };
+
+  const closeNewProductModal = () => {
+    setShowNewProductModal(false);
+    setShowNewProdCategoryInput(false);
+    setNewProdCategoryName('');
+    setNewProdModalError(null);
+  };
+
+  const handleCreateNewProductCategory = async () => {
+    const trimmed = newProdCategoryName.trim();
+    if (!trimmed) return;
+
+    setCreatingNewProdCategory(true);
+    setNewProdModalError(null);
+    try {
+      const created = await productService.createCategory(trimmed);
+      setCategories(current => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewProdCatId(created.id);
+      setNewProdCategoryName('');
+      setShowNewProdCategoryInput(false);
+    } catch (err: unknown) {
+      setNewProdModalError(err instanceof Error ? err.message : 'No se pudo crear la categoría.');
+    } finally {
+      setCreatingNewProdCategory(false);
+    }
+  };
+
   // Crear producto nuevo directamente desde la compra
   const handleSaveNewProductFromPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProdName.trim() || !newProdCatId) return;
 
     setSavingNewProduct(true);
+    setNewProdModalError(null);
     try {
       const weightNum = newProdType === 'weight' ? Number(newProdWeight) || 0 : null;
       const costNum = Number(newProdCost) || 0;
@@ -213,12 +285,12 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
         ];
       });
 
-      setShowNewProductModal(false);
+      closeNewProductModal();
       setNewProdName('');
       setNewProdCost('');
       setNewProdPrice('');
     } catch (err: unknown) {
-      alert('Error al crear producto: ' + (err instanceof Error ? err.message : ''));
+      setNewProdModalError(err instanceof Error ? err.message : 'No se pudo crear el producto.');
     } finally {
       setSavingNewProduct(false);
     }
@@ -315,12 +387,10 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
     setItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Cálculo del total acumulado de la compra
-  const totalAmount = items.reduce((sum, item) => {
-    const qty = parseFloat(item.quantity) || 0;
-    const cost = parseFloat(item.unitCost) || 0;
-    return sum + qty * cost;
-  }, 0);
+  const totalCents = items.reduce(
+    (sum, item) => sum + purchaseLineSubtotalCents(item.quantity, item.unitCost),
+    0n,
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -391,9 +461,25 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 p-4 sm:p-6">
         {error && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm" role="alert">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {initialDataWarning && (
+          <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between" role="status">
+            <span className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {initialDataWarning}
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadInitialData()}
+              className="self-start font-semibold text-amber-900 underline underline-offset-2 sm:self-auto"
+            >
+              Reintentar
+            </button>
           </div>
         )}
 
@@ -516,7 +602,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
             </span>
             <button
               type="button"
-              onClick={() => setShowNewProductModal(true)}
+              onClick={openNewProductModal}
               className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-[#2563EB] shadow-2xs transition-colors hover:bg-blue-50/50 hover:text-blue-700 sm:w-auto sm:py-1.5"
               data-testid="btn-create-product-from-purchase"
             >
@@ -525,57 +611,79 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
             </button>
           </div>
 
-          <div className="lg:overflow-x-auto">
-            <table className="block w-full border-collapse text-left text-sm lg:table lg:table-fixed">
-              <colgroup className="hidden lg:table-column-group">
-                <col className="w-[31%]" />
-                <col className="w-[31%]" />
-                <col className="w-[10%]" />
+          <div className="xl:overflow-x-auto">
+            <table className="block w-full border-collapse text-left text-sm xl:table xl:table-fixed">
+              <colgroup className="hidden xl:table-column-group">
+                <col className="w-[29%]" />
+                <col className="w-[29%]" />
                 <col className="w-[12%]" />
+                <col className="w-[14%]" />
                 <col className="w-[11%]" />
                 <col className="w-[5%]" />
               </colgroup>
-              <thead className="hidden border-b border-slate-200 bg-slate-50/80 text-xs font-semibold text-slate-500 lg:table-header-group">
+              <thead className="hidden border-b border-slate-200 bg-slate-50/80 text-xs font-semibold text-slate-500 xl:table-header-group">
                 <tr>
                   <th className="py-2.5 px-4">Producto</th>
                   <th className="py-2.5 px-4">Presentación</th>
-                  <th className="px-3 py-2.5">Cantidad</th>
+                  <th className="px-3 py-2.5">Bultos / unidades</th>
                   <th className="px-3 py-2.5">Costo Unit. ($)</th>
                   <th className="px-3 py-2.5 text-right">Subtotal</th>
                   <th className="px-2 py-2.5"></th>
                 </tr>
               </thead>
-              <tbody className="block space-y-3 bg-slate-50/60 p-3 lg:table-row-group lg:space-y-0 lg:bg-white lg:p-0">
+              <tbody className="block space-y-3 bg-slate-50/60 p-3 xl:table-row-group xl:space-y-0 xl:bg-white xl:p-0">
                 {items.map((row, idx) => {
                   const prod = products.find(p => p.id === row.productId);
                   const presentations = prod?.product_presentations || [];
                   const isWeight = prod?.type === 'weight';
-                  const rowSubtotal = (parseFloat(row.quantity) || 0) * (parseFloat(row.unitCost) || 0);
+                  const purchaseUnit = prod ? (isWeight ? 'bultos' : 'unidades') : null;
+                  const rowSubtotalCents = purchaseLineSubtotalCents(row.quantity, row.unitCost);
 
                   return (
-                    <tr key={row.tempId} className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50/50 lg:table-row lg:rounded-none lg:border-0 lg:p-0 lg:shadow-none">
+                    <tr key={row.tempId} className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50/50 xl:table-row xl:rounded-none xl:border-0 xl:p-0 xl:shadow-none">
                       {/* Producto */}
-                      <td className="col-span-2 p-0 lg:table-cell lg:p-3">
-                        <span className="mb-1.5 block text-xs font-medium text-slate-500 lg:hidden">Producto</span>
+                      <td className="col-span-2 p-0 xl:table-cell xl:p-3">
+                        <span className="mb-1.5 block text-xs font-medium text-slate-500 xl:hidden">Producto</span>
                         <select
                           required
                           value={row.productId}
                           onChange={e => updateItem(idx, 'productId', e.target.value)}
+                          disabled={catalogLoading || Boolean(catalogError)}
                           className="w-full p-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm bg-white"
                           data-testid={`purchase-item-product-${idx}`}
                         >
-                          <option value="">Seleccione producto...</option>
+                          <option value="">
+                            {catalogLoading
+                              ? 'Cargando productos...'
+                              : catalogError
+                                ? 'No se pudieron cargar los productos'
+                                : products.length === 0
+                                  ? 'No hay productos activos'
+                                  : 'Seleccione producto...'}
+                          </option>
                           {products.map(p => (
                             <option key={p.id} value={p.id}>
                               {p.name}
                             </option>
                           ))}
                         </select>
+                        {catalogError && (
+                          <div className="mt-2 flex items-center justify-between gap-3 text-xs text-red-700" role="alert">
+                            <span>{catalogError}</span>
+                            <button
+                              type="button"
+                              onClick={() => void loadInitialData()}
+                              className="shrink-0 font-semibold underline underline-offset-2"
+                            >
+                              Reintentar
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* Presentación con opción de crear nueva */}
-                      <td className="col-span-2 p-0 lg:table-cell lg:p-3">
-                        <span className="mb-1.5 block text-xs font-medium text-slate-500 lg:hidden">Presentación</span>
+                      <td className="col-span-2 p-0 xl:table-cell xl:p-3">
+                        <span className="mb-1.5 block text-xs font-medium text-slate-500 xl:hidden">Presentación</span>
                         <div className="flex items-center gap-1.5">
                           <select
                             required
@@ -611,24 +719,37 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                       </td>
 
                       {/* Cantidad */}
-                      <td className="p-0 lg:table-cell lg:p-3">
-                        <span className="mb-1.5 block text-xs font-medium text-slate-500 lg:hidden">Cantidad</span>
-                        <input
-                          required
-                          type="number"
-                          step={isWeight ? '0.001' : '1'}
-                          min={isWeight ? '0.001' : '1'}
-                          value={row.quantity}
-                          onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                          placeholder={isWeight ? '10 kg' : '10 u'}
-                          className="w-full p-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-mono"
-                          data-testid={`purchase-item-quantity-${idx}`}
-                        />
+                      <td className="p-0 xl:table-cell xl:p-3">
+                        <span className="mb-1.5 block text-xs font-medium text-slate-500 xl:hidden">
+                          {purchaseUnit ? `Cantidad de ${purchaseUnit}` : 'Cantidad'}
+                        </span>
+                        <div className="relative min-w-0">
+                          <input
+                            required
+                            type="number"
+                            step="1"
+                            min="1"
+                            value={row.quantity}
+                            onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                            placeholder="1"
+                            aria-label={purchaseUnit ? `Cantidad de ${purchaseUnit}` : 'Cantidad'}
+                            className={`min-w-0 w-full rounded-lg border border-slate-200 p-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 ${purchaseUnit ? 'pr-16' : ''}`}
+                            data-testid={`purchase-item-quantity-${idx}`}
+                          />
+                          {purchaseUnit && (
+                            <span
+                              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500"
+                              data-testid={`purchase-item-quantity-unit-${idx}`}
+                            >
+                              {purchaseUnit}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Costo Unitario */}
-                      <td className="p-0 lg:table-cell lg:p-3">
-                        <span className="mb-1.5 block text-xs font-medium text-slate-500 lg:hidden">Costo unitario</span>
+                      <td className="p-0 xl:table-cell xl:p-3">
+                        <span className="mb-1.5 block text-xs font-medium text-slate-500 xl:hidden">Costo unitario</span>
                         <div className="relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
                           <input
@@ -646,13 +767,13 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                       </td>
 
                       {/* Subtotal */}
-                      <td className="flex flex-col justify-end p-0 font-mono font-semibold text-slate-800 lg:table-cell lg:p-3 lg:text-right">
-                        <span className="mb-1 block font-sans text-xs font-medium text-slate-500 lg:hidden">Subtotal</span>
-                        <span>${rowSubtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                      <td className="flex flex-col justify-end p-0 font-mono font-semibold text-slate-800 xl:table-cell xl:p-3 xl:text-right">
+                        <span className="mb-1 block font-sans text-xs font-medium text-slate-500 xl:hidden">Subtotal</span>
+                        <span>${formatCents(rowSubtotalCents)}</span>
                       </td>
 
                       {/* Eliminar */}
-                      <td className="flex items-end justify-end p-0 lg:table-cell lg:p-3 lg:text-center">
+                      <td className="flex items-end justify-end p-0 xl:table-cell xl:p-3 xl:text-center">
                         <button
                           type="button"
                           onClick={() => removeItemRow(idx)}
@@ -688,7 +809,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
           <div className="flex w-full flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-2xs sm:w-auto sm:flex-row sm:items-center sm:gap-6 sm:px-6">
             <span className="text-slate-600 font-semibold text-sm">Total de la Factura:</span>
             <span className="text-2xl font-bold text-slate-800 font-mono" data-testid="purchase-total-amount">
-              ${totalAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              ${formatCents(totalCents)}
             </span>
           </div>
         </div>
@@ -703,7 +824,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
             Cancelar
           </button>
           <button
-            disabled={loading || totalAmount <= 0}
+            disabled={loading || totalCents <= 0n}
             type="submit"
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
             data-testid="submit-purchase-btn"
@@ -720,6 +841,10 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
         onClose={() => setIsSupplierModalOpen(false)}
         suppliers={suppliers}
         onSupplierChanged={loadInitialData}
+        onSupplierRemoved={id => {
+          setSuppliers(current => current.filter(supplier => supplier.id !== id));
+          setSupplierId(current => current === id ? '' : current);
+        }}
       />
 
       {/* Modal: Crear Producto Nuevo desde Compras */}
@@ -737,13 +862,22 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                 </div>
               </div>
               <button
-                onClick={() => setShowNewProductModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600"
+                type="button"
+                onClick={closeNewProductModal}
+                disabled={savingNewProduct}
+                className="p-1 text-slate-400 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Cerrar nuevo producto"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {newProdModalError && (
+              <div className="mx-4 mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 sm:mx-6" role="alert" aria-live="assertive">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{newProdModalError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleSaveNewProductFromPurchase} className="flex flex-col gap-4 overflow-y-auto p-4 sm:p-6">
               <div>
@@ -761,19 +895,84 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Categoría *</label>
-                  <select
-                    required
-                    value={newProdCatId}
-                    onChange={e => setNewProdCatId(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
-                    data-testid="purchase-new-prod-cat"
-                  >
-                    <option value="">Seleccione...</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-xs font-semibold text-slate-600">Categoría *</label>
+                    {!showNewProdCategoryInput && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewProdModalError(null);
+                          setShowNewProdCategoryInput(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                        data-testid="purchase-btn-add-category"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Nueva categoría
+                      </button>
+                    )}
+                  </div>
+
+                  {showNewProdCategoryInput ? (
+                    <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5">
+                      {categories.length === 0 && (
+                        <p className="text-xs font-medium text-slate-700">Creá la primera categoría para continuar.</p>
+                      )}
+                      <div className="flex gap-2">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={newProdCategoryName}
+                          onChange={e => setNewProdCategoryName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void handleCreateNewProductCategory();
+                            }
+                          }}
+                          placeholder="Ej: Alimentos"
+                          className="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-white p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                          aria-label="Nombre de la nueva categoría"
+                          data-testid="purchase-new-category-input"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleCreateNewProductCategory()}
+                          disabled={creatingNewProdCategory || !newProdCategoryName.trim()}
+                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="Guardar nueva categoría"
+                          data-testid="purchase-save-new-category"
+                        >
+                          <Check className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {categories.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowNewProdCategoryInput(false);
+                            setNewProdCategoryName('');
+                          }}
+                          className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      required
+                      value={newProdCatId}
+                      onChange={e => setNewProdCatId(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
+                      data-testid="purchase-new-prod-cat"
+                    >
+                      <option value="">Seleccione...</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -870,8 +1069,9 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
               <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-2 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowNewProductModal(false)}
-                  className="w-full rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
+                  onClick={closeNewProductModal}
+                  disabled={savingNewProduct}
+                  className="w-full rounded-lg border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   Cancelar
                 </button>

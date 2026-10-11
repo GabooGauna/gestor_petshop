@@ -6,6 +6,6 @@ test.describe('Sanidad del Entorno', () => {
         await page.goto('/');
 
         // Verifica que el título o contenedor principal exista
-        await expect(page).toHaveTitle(/Vite|Mascotas/i);
+        await expect(page).toHaveTitle('Avenida Animal');
     });
 });

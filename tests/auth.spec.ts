@@ -4,7 +4,13 @@ import { installMockBackend, loginWithE2EUser, loginWithMockUser, skipUnlessReal
 test.describe('Autenticación', () => {
   test('un visitante anónimo solo ve el acceso y no la aplicación', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'PetStock' })).toBeVisible();
+    await expect(page).toHaveTitle('Avenida Animal');
+    await expect(page.getByRole('heading', { name: 'Avenida Animal' })).toBeVisible();
+    const favicon = page.locator('link[rel="icon"]');
+    await expect(favicon).toHaveAttribute('href', '/favicon.svg');
+    const faviconResponse = await page.request.get('/favicon.svg');
+    expect(faviconResponse.ok()).toBeTruthy();
+    expect(await faviconResponse.text()).toContain('<title>Avenida Animal</title>');
     await expect(page.getByLabel('Correo')).toBeVisible();
     await expect(page.getByLabel('Contraseña')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Punto de Venta' })).not.toBeVisible();

@@ -88,9 +88,9 @@ test.describe('Inventario — mermas, ajustes y Kardex (backend simulado)', () =
 
   test('Kardex representa compra positiva y venta/merma negativas', async ({ page }) => {
     const movements = [
-      { id: '1', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'compra', quantity: 20, reason: 'Compra QA', reference_id: null, reference_type: null, created_at: '2026-10-09T12:00:00Z' },
-      { id: '2', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'venta', quantity: -2.5, reason: 'Venta QA', reference_id: null, reference_type: null, created_at: '2026-10-09T13:00:00Z' },
-      { id: '3', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'merma', quantity: -0.5, reason: 'Merma QA', reference_id: null, reference_type: null, created_at: '2026-10-09T14:00:00Z' },
+      { id: '1', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'compra', quantity: 20, reason: 'Compra 11111111-2222-4333-8444-555555555555', reference_id: '11111111-2222-4333-8444-555555555555', reference_type: 'purchase', created_at: '2026-10-09T12:00:00Z', products: { name: mockCatalog.products[0].name }, product_presentations: { name: mockCatalog.products[0].product_presentations[0].name, stock: 200, weight_kg: 20 } },
+      { id: '2', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'venta', quantity: -2.5, reason: 'Venta QA', reference_id: null, reference_type: null, created_at: '2026-10-09T13:00:00Z', products: { name: mockCatalog.products[0].name }, product_presentations: { name: mockCatalog.products[0].product_presentations[0].name, stock: 200, weight_kg: 20 } },
+      { id: '3', product_id: mockCatalog.products[0].id, presentation_id: mockCatalog.products[0].product_presentations[0].id, type: 'merma', quantity: -0.5, reason: 'Merma QA', reference_id: null, reference_type: null, created_at: '2026-10-09T14:00:00Z', products: { name: mockCatalog.products[0].name }, product_presentations: { name: mockCatalog.products[0].product_presentations[0].name, stock: 200, weight_kg: 20 } },
     ];
     await page.unroute('**/rest/v1/inventory_movements*');
     await page.route('**/rest/v1/inventory_movements*', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(movements) }));
@@ -98,6 +98,10 @@ test.describe('Inventario — mermas, ajustes y Kardex (backend simulado)', () =
     await expect(page.getByRole('button', { name: 'Inventario' })).toBeVisible();
     await page.getByRole('button', { name: 'Inventario' }).click();
     await page.getByTestId('tab-kardex').click();
+    await expect(page.getByRole('table')).toContainText('Alimento QA');
+    await expect(page.getByRole('table')).toContainText('Bolsa 20 kg');
+    await expect(page.getByRole('table')).not.toContainText(mockCatalog.products[0].product_presentations[0].id.slice(0, 8));
+    await expect(page.getByRole('table')).not.toContainText('11111111-2222-4333-8444-555555555555');
     await expect(page.getByRole('table')).toContainText('+20,000');
     await expect(page.getByRole('table')).toContainText('-2,500');
     await expect(page.getByRole('table')).toContainText('-0,500');

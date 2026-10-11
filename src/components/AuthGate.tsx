@@ -43,19 +43,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <div className="bg-[#0F172A] px-7 py-8 text-white">
             <div className="mb-6 flex items-center gap-3">
               <Store className="h-8 w-8" />
-              <div><h1 className="text-xl font-bold">PetStock</h1><p className="text-xs text-slate-400">Acceso al negocio</p></div>
+              <div><h1 className="text-xl font-bold">Avenida Animal</h1><p className="text-xs text-slate-400">Acceso al negocio</p></div>
             </div>
             <p className="text-sm leading-6 text-slate-300">Ingresá con la cuenta asignada. El registro público no está habilitado.</p>
           </div>
           <form onSubmit={signIn} className="space-y-4 p-7">
             {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</div>}
             <label className="block text-sm font-medium text-slate-700">Correo
-              <input type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
+              <input id="email" name="email" type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
             </label>
             <label className="block text-sm font-medium text-slate-700">Contraseña
-              <input type="password" required autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
+              <input id="password" name="password" type="password" required autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
             </label>
-            <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2563EB] px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            <button type="submit" disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2563EB] px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
               <LockKeyhole className="h-4 w-4" />{submitting ? 'Ingresando…' : 'Ingresar'}
             </button>
           </form>

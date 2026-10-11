@@ -1,13 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { inventoryService } from '../services/inventoryService';
-import type { StockMutationResult } from '../services/inventoryService';
-import type { Database } from '../types/database.types';
+import type { InventoryMovement, StockMutationResult } from '../services/inventoryService';
+import { formatMovementReason } from '../lib/reportFormatting';
 import {
   AlertTriangle, ArrowDownCircle, ArrowUpCircle, BarChart2,
-  CheckCircle, ClipboardList, RefreshCw, X,
+  CheckCircle, ChevronLeft, ChevronRight, ClipboardList, RefreshCw, X,
 } from 'lucide-react';
-
-type MovementRow = Database['public']['Tables']['inventory_movements']['Row'];
 
 interface Presentation {
   id: string;
@@ -118,7 +116,7 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4" data-testid="shrinkage-form">
       {/* Error banner */}
       {error && (
-        <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm" data-testid="shrinkage-error">
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm" data-testid="shrinkage-error" role="alert">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)} className="ml-auto"><X className="w-4 h-4" /></button>
@@ -284,7 +282,7 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4" data-testid="adjustment-form">
       {error && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-4 py-3 text-sm">
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-4 py-3 text-sm" role="alert">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -394,7 +392,7 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
 // ── Tabla de Kardex / Movimientos ─────────────────────────────────────────
 
 interface MovementsTableProps {
-  movements: MovementRow[];
+  movements: InventoryMovement[];
   loading: boolean;
 }
 
@@ -418,7 +416,7 @@ function MovementsTable({ movements, loading }: MovementsTableProps) {
           <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wide">
             <th className="py-3 px-4">Fecha</th>
             <th className="py-3 px-4">Tipo</th>
-            <th className="py-3 px-4">Presentación</th>
+            <th className="py-3 px-4">Producto / presentación</th>
             <th className="py-3 px-4 text-right">Cantidad</th>
             <th className="py-3 px-4">Motivo</th>
           </tr>
@@ -441,8 +439,9 @@ function MovementsTable({ movements, loading }: MovementsTableProps) {
                   </span>
                 </td>
                 <td className="text-xs text-slate-700 md:table-cell md:px-4 md:py-3">
-                  <span className="mb-1 block font-sans text-[11px] font-medium text-slate-400 md:hidden">Presentación</span>
-                  {mov.presentation_id?.slice(0, 8) ?? '—'}
+                  <span className="mb-1 block font-sans text-[11px] font-medium text-slate-400 md:hidden">Producto / presentación</span>
+                  <span className="block font-medium text-slate-700">{mov.products?.name ?? 'Producto eliminado'}</span>
+                  <span className="mt-0.5 block text-[11px] text-slate-400">{mov.product_presentations?.name ?? 'Sin presentación'}</span>
                 </td>
                 <td className={`text-right font-mono font-semibold md:table-cell md:px-4 md:py-3 ${qty < 0 ? 'text-red-600' : 'text-blue-600'}`}>
                   <span className="mb-1 block font-sans text-[11px] font-medium text-slate-400 md:hidden">Cantidad</span>
@@ -450,7 +449,7 @@ function MovementsTable({ movements, loading }: MovementsTableProps) {
                 </td>
                 <td className="col-span-2 text-xs text-slate-500 md:table-cell md:max-w-xs md:truncate md:px-4 md:py-3">
                   <span className="mb-1 block text-[11px] font-medium text-slate-400 md:hidden">Motivo</span>
-                  {mov.reason ?? '—'}
+                  {formatMovementReason(mov.reason, mov.reference_id) || '—'}
                 </td>
               </tr>
             );
@@ -472,21 +471,25 @@ interface InventoryViewProps {
 
 export function InventoryView({ products, onStockChanged }: InventoryViewProps) {
   const [tab, setTab] = useState<Tab>('mermas');
-  const [movements, setMovements] = useState<MovementRow[]>([]);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [movementCount, setMovementCount] = useState(0);
+  const [movementOffset, setMovementOffset] = useState(0);
   const [loadingMov, setLoadingMov] = useState(true);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const loadMovements = useCallback(async () => {
     setLoadingMov(true);
     try {
-      const raw = await inventoryService.getMovements();
-      setMovements((raw ?? []) as MovementRow[]);
+      const page = await inventoryService.getMovements(50, movementOffset);
+      setMovements(page.items);
+      setMovementCount(page.totalCount);
     } catch {
       setMovements([]);
+      setMovementCount(0);
     } finally {
       setLoadingMov(false);
     }
-  }, []);
+  }, [movementOffset]);
 
   // The initial server snapshot intentionally seeds this remote-data view.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -495,7 +498,8 @@ export function InventoryView({ products, onStockChanged }: InventoryViewProps) 
   const handleSuccess = (msg: string, result: StockMutationResult) => {
     onStockChanged?.(result);
     setSuccessMsg(msg);
-    void loadMovements();
+    if (movementOffset === 0) void loadMovements();
+    else setMovementOffset(0);
     setTimeout(() => setSuccessMsg(null), 4000);
   };
 
@@ -591,9 +595,18 @@ export function InventoryView({ products, onStockChanged }: InventoryViewProps) 
             <div className="flex items-start gap-2 border-b border-slate-100 px-4 pb-3 pt-4 sm:items-center sm:px-6 sm:pt-5">
               <ClipboardList className="w-5 h-5 text-slate-400" />
               <h3 className="font-semibold text-slate-800">Kardex — Historial de movimientos</h3>
-              <span className="ml-auto shrink-0 text-xs text-slate-400">{movements.length} registros</span>
+              <span className="ml-auto shrink-0 text-xs text-slate-400">{movementCount} registros</span>
             </div>
             <MovementsTable movements={movements} loading={loadingMov} />
+            {!loadingMov && movementCount > 0 && (
+              <footer className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:px-6">
+                <span>{movementOffset + 1}–{Math.min(movementOffset + 50, movementCount)} de {movementCount}</span>
+                <div className="flex gap-2">
+                  <button type="button" aria-label="Movimientos anteriores" disabled={movementOffset === 0} onClick={() => setMovementOffset(current => Math.max(0, current - 50))} className="rounded-lg border border-slate-200 p-2 disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                  <button type="button" aria-label="Movimientos siguientes" disabled={movementOffset + 50 >= movementCount} onClick={() => setMovementOffset(current => current + 50)} className="rounded-lg border border-slate-200 p-2 disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
+                </div>
+              </footer>
+            )}
           </div>
         )}
       </div>

@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../types/database.types';
 
-// @ts-expect-error - Fallback to process.env for Node/Playwright environments
-const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-// @ts-expect-error - Fallback to process.env for Node/Playwright environments
-const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+const runtime = globalThis as typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+};
+const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL ?? runtime.process?.env?.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY ?? runtime.process?.env?.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables in .env');

@@ -1,4 +1,4 @@
-# PetStock QA
+# Avenida Animal QA
 
 La suite segura usa respuestas Supabase simuladas para validar login, POS, compras,
 mermas, ajustes y Kardex sin escribir en ninguna base:
@@ -6,6 +6,24 @@ mermas, ajustes y Kardex sin escribir en ninguna base:
 ```powershell
 npm run test:e2e:safe
 ```
+
+Playwright necesita un navegador compatible. La opción preferida es instalar su
+Chromium administrado una vez:
+
+```powershell
+npx playwright install chromium
+```
+
+En entornos donde no se permiten descargas, se puede reutilizar Chrome o Edge local
+sin cambiar la configuración versionada:
+
+```powershell
+$env:PLAYWRIGHT_BROWSER_PATH='C:\Program Files\Google\Chrome\Application\chrome.exe'
+npm run test:e2e:safe
+```
+
+La configuración muestra progreso en consola y genera el informe HTML sin abrir un
+servidor interactivo, para que las ejecuciones automatizadas siempre finalicen.
 
 Las verificaciones reales de solo lectura requieren `E2E_EMAIL` y `E2E_PASSWORD`.
 Copiar `.env.e2e.example` a un archivo local no versionado y usar una cuenta dedicada.

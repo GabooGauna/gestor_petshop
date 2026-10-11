@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import Swal from 'sweetalert2';
 import { supplierService } from '../services/supplierService';
 import type { Database } from '../types/database.types';
-import { X, Plus, Truck, Check, AlertCircle, Phone, Building2 } from 'lucide-react';
+import { X, Plus, Truck, Check, AlertCircle, Phone, Building2, Trash2 } from 'lucide-react';
 
 type Supplier = Database['public']['Tables']['suppliers']['Row'];
 
@@ -9,13 +10,15 @@ interface SupplierModalProps {
   isOpen: boolean;
   onClose: () => void;
   suppliers: Supplier[];
-  onSupplierChanged: () => void;
+  onSupplierChanged: () => void | Promise<void>;
+  onSupplierRemoved: (id: string) => void;
 }
 
-export function SupplierModal({ isOpen, onClose, suppliers, onSupplierChanged }: SupplierModalProps) {
+export function SupplierModal({ isOpen, onClose, suppliers, onSupplierChanged, onSupplierRemoved }: SupplierModalProps) {
   const [name, setName] = useState('');
   const [contactInfo, setContactInfo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -41,12 +44,51 @@ export function SupplierModal({ isOpen, onClose, suppliers, onSupplierChanged }:
       setName('');
       setContactInfo('');
       setSuccess(`Proveedor "${trimmedName}" registrado con éxito.`);
-      onSupplierChanged();
+      await onSupplierChanged();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al registrar proveedor.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRemove = async (supplier: Supplier) => {
+    const confirmation = await Swal.fire({
+      icon: 'warning',
+      title: '¿Eliminar este proveedor?',
+      text: `“${supplier.name}” dejará de estar disponible para nuevas compras. Si tiene compras anteriores, sus datos se conservarán en el historial.`,
+      showCancelButton: true,
+      focusCancel: true,
+      reverseButtons: true,
+      confirmButtonText: 'Sí, eliminar proveedor',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#DC2626',
+      cancelButtonColor: '#64748B',
+    });
+    if (!confirmation.isConfirmed) return;
+
+    setDeletingId(supplier.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      await supplierService.removeSupplier(supplier.id);
+      onSupplierRemoved(supplier.id);
+      await Swal.fire({
+        icon: 'success',
+        title: 'Proveedor eliminado',
+        text: `“${supplier.name}” ya no aparecerá en las compras nuevas.`,
+        confirmButtonColor: '#2563EB',
+      });
+    } catch (err: unknown) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'No se pudo eliminar',
+        text: err instanceof Error ? err.message : 'No se pudo eliminar el proveedor.',
+        confirmButtonColor: '#2563EB',
+      });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -134,7 +176,7 @@ export function SupplierModal({ isOpen, onClose, suppliers, onSupplierChanged }:
 
           {/* Feedback */}
           {error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs" role="alert">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
@@ -165,7 +207,7 @@ export function SupplierModal({ isOpen, onClose, suppliers, onSupplierChanged }:
                     key={s.id}
                     className="flex items-center justify-between p-3 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/70 transition-colors group"
                   >
-                    <div className="flex flex-col min-w-0">
+                    <div className="flex min-w-0 flex-col">
                       <span className="text-sm text-slate-800 font-medium truncate">{s.name}</span>
                       {s.contact_info ? (
                         <span className="text-xs text-slate-500 truncate">{s.contact_info}</span>
@@ -173,6 +215,16 @@ export function SupplierModal({ isOpen, onClose, suppliers, onSupplierChanged }:
                         <span className="text-[11px] text-slate-400 italic">Sin datos de contacto</span>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRemove(s)}
+                      disabled={deletingId !== null}
+                      className="ml-3 flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 disabled:cursor-wait disabled:opacity-50"
+                      aria-label={`Eliminar proveedor ${s.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">{deletingId === s.id ? 'Eliminando...' : 'Eliminar'}</span>
+                    </button>
                   </div>
                 ))}
               </div>

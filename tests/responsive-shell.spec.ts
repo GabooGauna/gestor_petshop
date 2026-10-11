@@ -46,8 +46,9 @@ test.describe('Navegación y catálogo responsive', () => {
     await loginWithMockUser(page);
 
     await expect(page.getByRole('button', { name: 'Abrir menú' })).toBeVisible();
-    await expect(page.getByTestId('stock-overview')).toBeVisible();
-    await expect(page.getByTestId('mobile-stock-list')).toBeVisible();
+    await expect(page.getByTestId('analytics-dashboard')).toBeVisible();
+    await expect(page.getByTestId('sales-chart')).toBeVisible();
+    await expect(page.getByTestId('low-stock-panel')).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.getByRole('button', { name: 'Abrir menú' }).click();
@@ -71,7 +72,7 @@ test.describe('Navegación y catálogo responsive', () => {
     await loginWithMockUser(page);
 
     await expect(page.getByRole('button', { name: 'Abrir menú' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Estado del stock' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'El pulso de Avenida Animal' })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 
@@ -116,7 +117,7 @@ test.describe('Navegación y catálogo responsive', () => {
     await page.locator('aside[aria-label="Navegación principal"]').getByRole('button', { name: 'Punto de Venta', exact: true }).click();
 
     await page.getByLabel('Producto').selectOption({ label: 'Correa QA' });
-    await page.getByLabel('Presentación').selectOption({ label: 'Unidad' });
+    await page.getByLabel('Presentación').selectOption(mockCatalog.products[1].product_presentations[0].id);
     await page.getByTestId('pos-input-value').fill('2');
     await page.getByRole('button', { name: 'Agregar al ticket' }).click();
 
@@ -198,6 +199,7 @@ test.describe('Navegación y catálogo responsive', () => {
       await page.route('**/rest/v1/inventory_movements*', route => route.fulfill({
         status: 200,
         contentType: 'application/json',
+        headers: { 'Content-Range': '0-15/16' },
         body: JSON.stringify(movements),
       }));
       await loginWithMockUser(page);
@@ -206,6 +208,7 @@ test.describe('Navegación y catálogo responsive', () => {
 
       const list = page.getByTestId('inventory-movements-list');
       await expect(page.getByText('16 registros')).toBeVisible();
+      await expect(page.getByText('1–16 de 16')).toBeVisible();
       const rows = list.locator('tbody > tr');
       await expect(rows).toHaveCount(16);
       const lastMovement = rows.last();

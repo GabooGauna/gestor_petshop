@@ -143,3 +143,14 @@ html[data-theme="dark"] .shadow-slate-300\/30 { --tw-shadow-color: rgba(0, 0, 0,
 html[data-theme="dark"] .swal2-popup { background: #111c2e; color: #edf3fb; }
 html[data-theme="dark"] .swal2-title,
 html[data-theme="dark"] .swal2-html-container { color: #edf3fb; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

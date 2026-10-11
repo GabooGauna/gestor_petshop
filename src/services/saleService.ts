@@ -1,7 +1,8 @@
 import { supabase } from '../lib/supabase';
 import type { Json } from '../types/database.types';
+import type { DecimalString } from '../types/domain';
 
-export type DecimalInput = `${number}`;
+export type DecimalInput = DecimalString;
 export type SaleMode = 'amount' | 'weight' | 'package' | 'unit';
 
 interface SaleItemBase {
@@ -33,9 +34,28 @@ function isSaleResult(value: unknown): value is SaleResult {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return typeof candidate.sale_id === 'string'
-    && typeof candidate.total_amount === 'string'
-    && typeof candidate.total_cost === 'string'
-    && Array.isArray(candidate.items);
+    && isDecimal(candidate.total_amount)
+    && isDecimal(candidate.total_cost)
+    && Array.isArray(candidate.items)
+    && candidate.items.every(item => {
+      if (!item || typeof item !== 'object') return false;
+      const row = item as Record<string, unknown>;
+      return typeof row.sale_item_id === 'string'
+        && typeof row.product_id === 'string'
+        && typeof row.presentation_id === 'string'
+        && typeof row.mode === 'string'
+        && ['amount', 'weight', 'package', 'unit'].includes(row.mode)
+        && isDecimal(row.commercial_quantity)
+        && isDecimal(row.stock_quantity)
+        && isDecimal(row.unit_price)
+        && isDecimal(row.subtotal)
+        && isDecimal(row.line_cost)
+        && isDecimal(row.stock_after);
+    });
+}
+
+function isDecimal(value: unknown): value is DecimalString {
+  return typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value);
 }
 
 export const saleCalculations = {
@@ -46,9 +66,6 @@ export const saleCalculations = {
   calculateAmountByQuantity(quantity: number, pricePerUnit: number): number {
     return Number((quantity * pricePerUnit).toFixed(2));
   },
-  calculateGrossProfit(subtotal: number, quantity: number, costPerUnit: number): number {
-    return Number((subtotal - quantity * costPerUnit).toFixed(2));
-  },
 };
 
 export const saleService = {
@@ -57,7 +74,12 @@ export const saleService = {
       p_payment_method: paymentMethod,
       p_items: items as unknown as Json,
     });
-    if (error) throw error;
+    if (error) {
+      if (error.message.includes('INSUFFICIENT_STOCK')) {
+        throw new Error('El stock cambió y ya no alcanza para completar la venta. Revisá las cantidades del ticket.');
+      }
+      throw error;
+    }
     if (!isSaleResult(data)) throw new Error('PETSTOCK_INVALID_SALE_RESPONSE');
     return data;
   },

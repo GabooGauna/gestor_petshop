@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { productService } from '../services/productService';
 import type { Database } from '../types/database.types';
-import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Plus, Layers, Trash2 } from 'lucide-react';
+import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Plus, Layers, Trash2, Archive } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 type PresentationUpdate = Database['public']['Tables']['product_presentations']['Update'];
@@ -62,10 +62,11 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
 
   // Estado para crear una nueva presentación inline
   const [showAddPres, setShowAddPres] = useState(false);
-  const [newPresName, setNewPresName] = useState(product.type === 'weight' ? 'Bolsa 15kg' : 'Unidad');
+  const [newPresName, setNewPresName] = useState('');
   const [newPresWeight, setNewPresWeight] = useState(product.type === 'weight' ? '15' : '');
   const [newPresCost, setNewPresCost] = useState('');
   const [newPresPrice, setNewPresPrice] = useState('');
+  const [newPresStock, setNewPresStock] = useState('0');
   const [newPresMargen, setNewPresMargen] = useState('10');
   const [savingNewPres, setSavingNewPres] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -151,6 +152,21 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
     e.preventDefault();
     if (!newPresName.trim()) return;
 
+    const initialStock = Number(newPresStock || '0');
+    const stockDecimals = (newPresStock.split('.')[1] ?? '').length;
+    if (!Number.isFinite(initialStock) || initialStock < 0 || stockDecimals > 3 || (!isWeightProduct && !Number.isInteger(initialStock))) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Revisá el stock inicial',
+        text: isWeightProduct
+          ? 'Usá cero o un valor positivo con hasta tres decimales.'
+          : 'Para productos por unidad, el stock debe ser un número entero igual o mayor que cero.',
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#2563EB',
+      });
+      return;
+    }
+
     setSavingNewPres(true);
     try {
       const costNum = Number(newPresCost) || 0;
@@ -168,11 +184,14 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
         price: priceNum,
         price_per_kg: pricePerKgCalc,
         weight_kg: weightNum,
+        stock: initialStock,
       });
 
       setShowAddPres(false);
+      setNewPresName('');
       setNewPresCost('');
       setNewPresPrice('');
+      setNewPresStock('0');
       onUpdated();
     } catch (err: unknown) {
       await Swal.fire({ icon: 'error', title: 'No se pudo crear la presentación', text: errorMessage(err, 'Revisá los datos e intentá nuevamente.'), confirmButtonColor: '#2563EB' });
@@ -181,15 +200,15 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
     }
   };
 
-  const handleDeleteProduct = async () => {
+  const handleArchiveProduct = async () => {
     const confirmation = await Swal.fire({
       icon: 'warning',
-      title: '¿Eliminar este producto?',
-      text: `Se eliminarán “${product.name}”, sus presentaciones, el stock actual y sus movimientos de inventario. Esta acción no se puede deshacer.`,
+      title: '¿Dar de baja este producto?',
+      text: `“${product.name}” dejará de estar disponible para nuevas operaciones. Sus presentaciones, stock, ventas, compras y movimientos se conservarán en el historial.`,
       showCancelButton: true,
       focusCancel: true,
       reverseButtons: true,
-      confirmButtonText: 'Sí, eliminar producto',
+      confirmButtonText: 'Sí, dar de baja',
       cancelButtonText: 'Cancelar',
       confirmButtonColor: '#DC2626',
       cancelButtonColor: '#64748B',
@@ -199,9 +218,9 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
     try {
       await productService.deleteProduct(product.id);
       onUpdated();
-      await Swal.fire({ icon: 'success', title: 'Producto eliminado', text: `“${product.name}” se eliminó correctamente.`, confirmButtonColor: '#2563EB' });
+      await Swal.fire({ icon: 'success', title: 'Producto dado de baja', text: `“${product.name}” quedó archivado y ya no aparece en el catálogo activo.`, confirmButtonColor: '#2563EB' });
     } catch (err: unknown) {
-      await Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: errorMessage(err, 'No se pudo eliminar el producto.'), confirmButtonColor: '#2563EB' });
+      await Swal.fire({ icon: 'error', title: 'No se pudo dar de baja', text: errorMessage(err, 'No se pudo dar de baja el producto.'), confirmButtonColor: '#2563EB' });
     } finally {
       setDeletingId(null);
     }
@@ -427,14 +446,14 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
             )}
             <button
               type="button"
-              onClick={() => void handleDeleteProduct()}
+              onClick={() => void handleArchiveProduct()}
               disabled={deletingId !== null}
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-              aria-label={`Eliminar producto ${product.name}`}
-              title="Eliminar producto"
+              aria-label={`Dar de baja producto ${product.name}`}
+              title="Dar de baja producto"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              Eliminar
+              <Archive className="h-3.5 w-3.5" />
+              Dar de baja
             </button>
           </div>
 
@@ -730,17 +749,33 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                     </button>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre</label>
-                    <input
-                      required
-                      type="text"
-                      value={newPresName}
-                      onChange={e => setNewPresName(e.target.value)}
-                      placeholder={isWeightProduct ? 'Ej: Bolsa 15kg' : 'Ej: Unidad'}
-                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
-                      data-testid="new-pres-name-input"
-                    />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre de la variante</label>
+                      <input
+                        required
+                        type="text"
+                        value={newPresName}
+                        onChange={e => setNewPresName(e.target.value)}
+                        placeholder={isWeightProduct ? 'Ej: Bolsa 15kg' : 'Ej: Correa larga'}
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
+                        data-testid="new-pres-name-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Stock inicial ({isWeightProduct ? 'kg' : 'uds'})</label>
+                      <input
+                        required
+                        type="number"
+                        min="0"
+                        step={isWeightProduct ? '0.001' : '1'}
+                        value={newPresStock}
+                        onChange={e => setNewPresStock(e.target.value)}
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
+                        data-testid="new-pres-stock-input"
+                      />
+                    </div>
+                    <p className="text-[11px] leading-4 text-slate-500 sm:col-span-2">El saldo quedará registrado como apertura de esta presentación en el Kardex.</p>
                   </div>
 
                   {isWeightProduct && (
@@ -779,6 +814,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                         onChange={e => setNewPresCost(e.target.value)}
                         className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#2563EB]"
                         placeholder="0"
+                        data-testid="new-pres-cost-input"
                       />
                     </div>
                   </div>

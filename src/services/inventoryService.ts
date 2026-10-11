@@ -1,5 +1,14 @@
 import { supabase } from '../lib/supabase';
-import type { DecimalInput } from './saleService';
+import type { DecimalString } from '../types/domain';
+import type { Database } from '../types/database.types';
+
+type DecimalInput = DecimalString;
+type InventoryMovementRow = Database['public']['Tables']['inventory_movements']['Row'];
+
+export type InventoryMovement = InventoryMovementRow & {
+  products: { name: string } | null;
+  product_presentations: { name: string; stock: number; weight_kg: number | null } | null;
+};
 
 export interface StockMutationResult {
   movement_id: string;
@@ -22,13 +31,16 @@ function isStockMutationResult(value: unknown): value is StockMutationResult {
 }
 
 export const inventoryService = {
-  async getMovements() {
-    const { data, error } = await supabase
+  async getMovements(limit = 50, offset = 0): Promise<{ items: InventoryMovement[]; totalCount: number }> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error('INVALID_LIMIT');
+    if (!Number.isInteger(offset) || offset < 0) throw new Error('INVALID_OFFSET');
+    const { data, error, count } = await supabase
       .from('inventory_movements')
-      .select('*, products(name), product_presentations(name, stock, weight_kg)')
-      .order('created_at', { ascending: false });
+      .select('*, products(name), product_presentations(name, stock, weight_kg)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
     if (error) throw error;
-    return data;
+    return { items: data ?? [], totalCount: count ?? data?.length ?? 0 };
   },
 
   async recordShrinkage(params: {

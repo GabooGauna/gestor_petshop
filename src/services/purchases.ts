@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase';
 import type { Json } from '../types/database.types';
-import type { DecimalInput } from './saleService';
+import type { DecimalString } from '../types/domain';
+
+type DecimalInput = DecimalString;
 
 export interface PurchaseItemPayload {
   presentation_id: string;
@@ -27,8 +29,24 @@ function isPurchaseResult(value: unknown): value is PurchaseResult {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return typeof candidate.purchase_id === 'string'
-    && typeof candidate.total_amount === 'string'
-    && Array.isArray(candidate.items);
+    && isDecimal(candidate.total_amount)
+    && Array.isArray(candidate.items)
+    && candidate.items.every(item => {
+      if (!item || typeof item !== 'object') return false;
+      const row = item as Record<string, unknown>;
+      return typeof row.purchase_item_id === 'string'
+        && typeof row.product_id === 'string'
+        && typeof row.presentation_id === 'string'
+        && isDecimal(row.quantity)
+        && isDecimal(row.unit_cost)
+        && isDecimal(row.subtotal)
+        && isDecimal(row.stock_added)
+        && isDecimal(row.stock_after);
+    });
+}
+
+function isDecimal(value: unknown): value is DecimalString {
+  return typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value);
 }
 
 export const purchaseService = {

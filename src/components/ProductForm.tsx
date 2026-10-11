@@ -1,16 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { productService } from '../services/productService';
-import { ArrowLeft, Plus, Check, Layers, Calculator, PackageCheck } from 'lucide-react';
-import type { Database } from '../types/database.types';
+import React, { useState, useEffect } from "react";
+import { productService } from "../services/productService";
+import {
+  ArrowLeft,
+  Plus,
+  Check,
+  Layers,
+  Calculator,
+  PackageCheck,
+} from "lucide-react";
+import type { Database } from "../types/database.types";
 
-type Category = Database['public']['Tables']['categories']['Row'];
+type Category = Database["public"]["Tables"]["categories"]["Row"];
 
 interface ProductFormProps {
   onProductAdded: (productName: string) => void;
   onCancel?: () => void;
 }
 
-function calcPricePerKg(priceBulk: number, weightKg: number, margenPct: number): number {
+function calcPricePerKg(
+  priceBulk: number,
+  weightKg: number,
+  margenPct: number,
+): number {
   if (!priceBulk || !weightKg) return 0;
   const basePorKg = priceBulk / weightKg;
   return basePorKg * (1 + margenPct / 100);
@@ -18,24 +29,24 @@ function calcPricePerKg(priceBulk: number, weightKg: number, margenPct: number):
 
 export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [name, setName] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [type, setType] = useState<'weight' | 'unit'>('weight');
+  const [name, setName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [type, setType] = useState<"weight" | "unit">("weight");
 
   // Presentación inicial
-  const [presName, setPresName] = useState('Bolsa 20kg');
-  const [weightKg, setWeightKg] = useState('20');
-  const [cost, setCost] = useState('');
-  const [priceBulk, setPriceBulk] = useState('');
-  const [margenPct, setMargenPct] = useState('10');
-  const [initialStock, setInitialStock] = useState('0');
+  const [presName, setPresName] = useState("Bolsa 20kg");
+  const [weightKg, setWeightKg] = useState("20");
+  const [cost, setCost] = useState("");
+  const [priceBulk, setPriceBulk] = useState("");
+  const [margenPct, setMargenPct] = useState("10");
+  const [initialStock, setInitialStock] = useState("0");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Creación rápida de categoría inline
   const [showNewCatInput, setShowNewCatInput] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
+  const [newCatName, setNewCatName] = useState("");
   const [creatingCat, setCreatingCat] = useState(false);
 
   const loadCategories = async () => {
@@ -43,7 +54,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
       const data = await productService.getCategories();
       setCategories(data);
     } catch (err) {
-      console.error('Error al cargar categorías:', err);
+      console.error("Error al cargar categorías:", err);
     }
   };
 
@@ -55,15 +66,15 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
   // Actualizar nombre de presentación sugerido al cambiar tipo o peso
   // Presentation name follows the explicit type/weight inputs.
   useEffect(() => {
-    if (type === 'weight') {
+    if (type === "weight") {
       if (weightKg) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setPresName(`Bolsa ${weightKg}kg`);
       } else {
-        setPresName('Bolsa');
+        setPresName("Bolsa");
       }
     } else {
-      setPresName('Unidad');
+      setPresName("Unidad");
     }
   }, [type, weightKg]);
 
@@ -74,12 +85,16 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
     setError(null);
     try {
       const created = await productService.createCategory(trimmed);
-      setCategories(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCategories((prev) =>
+        [...prev, created].sort((a, b) => a.name.localeCompare(b.name)),
+      );
       setCategoryId(created.id);
-      setNewCatName('');
+      setNewCatName("");
       setShowNewCatInput(false);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al crear categoría.');
+      setError(
+        err instanceof Error ? err.message : "Error al crear categoría.",
+      );
     } finally {
       setCreatingCat(false);
     }
@@ -87,7 +102,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
   // Preview del $/kg calculado
   const previewPricePerKg = (() => {
-    if (type !== 'weight') return null;
+    if (type !== "weight") return null;
     const b = Number(priceBulk);
     const w = Number(weightKg);
     const m = Number(margenPct);
@@ -101,16 +116,19 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
     const trimmedName = name.trim();
     if (!trimmedName || !categoryId) {
-      setError('Por favor completá el nombre del producto y seleccioná una categoría.');
+      setError(
+        "Por favor completá el nombre del producto y seleccioná una categoría.",
+      );
       return;
     }
 
     const costNum = Number(cost) || 0;
     const priceNum = Number(priceBulk) || 0;
-    const weightNum = type === 'weight' ? Number(weightKg) || 0 : null;
-    const calculatedPricePerKg = type === 'weight' && weightNum && priceNum
-      ? calcPricePerKg(priceNum, weightNum, Number(margenPct) || 0)
-      : null;
+    const weightNum = type === "weight" ? Number(weightKg) || 0 : null;
+    const calculatedPricePerKg =
+      type === "weight" && weightNum && priceNum
+        ? calcPricePerKg(priceNum, weightNum, Number(margenPct) || 0)
+        : null;
 
     setLoading(true);
     try {
@@ -121,7 +139,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
           type,
         },
         presentation: {
-          name: presName.trim() || (type === 'weight' ? 'Bolsa' : 'Unidad'),
+          name: presName.trim() || (type === "weight" ? "Bolsa" : "Unidad"),
           weight_kg: weightNum,
           cost: costNum,
           price: priceNum,
@@ -132,13 +150,18 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
       onProductAdded(trimmedName);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al crear el producto.');
+      setError(
+        err instanceof Error ? err.message : "Error al crear el producto.",
+      );
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 w-full" data-testid="new-product-form">
+    <div
+      className="bg-white rounded-xl shadow-sm border border-slate-200 w-full"
+      data-testid="new-product-form"
+    >
       <div className="flex items-center justify-between border-b border-slate-100 p-4 sm:p-6">
         <div className="flex items-center gap-3">
           <button
@@ -150,14 +173,16 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
           </button>
           <div>
             <h2 className="text-xl font-bold text-slate-800">Nuevo Producto</h2>
-            <p className="text-xs text-slate-500">Configurá el producto y su presentación inicial</p>
+            <p className="text-xs text-slate-500">
+              Configurá el producto y su presentación inicial
+            </p>
           </div>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 p-4 sm:p-6">
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg">
+          <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg" role="alert">
             {error}
           </div>
         )}
@@ -171,7 +196,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             required
             type="text"
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition-all text-sm"
             placeholder="Ej: Dog Chow Adultos"
             data-testid="product-name-input"
@@ -198,7 +223,10 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
               ) : (
                 <button
                   type="button"
-                  onClick={() => { setShowNewCatInput(false); setNewCatName(''); }}
+                  onClick={() => {
+                    setShowNewCatInput(false);
+                    setNewCatName("");
+                  }}
                   className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
                 >
                   Cancelar
@@ -211,13 +239,13 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                 <input
                   type="text"
                   value={newCatName}
-                  onChange={e => setNewCatName(e.target.value)}
+                  onChange={(e) => setNewCatName(e.target.value)}
                   placeholder="Ej: Alimento Perro"
                   className="flex-1 p-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] text-sm"
                   data-testid="quick-category-input"
                   autoFocus
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
                       e.preventDefault();
                       void handleCreateQuickCategory();
                     }
@@ -238,12 +266,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
               <select
                 required
                 value={categoryId}
-                onChange={e => setCategoryId(e.target.value)}
+                onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition-all text-sm bg-white"
                 data-testid="product-category-select"
               >
                 <option value="">Seleccione una categoría</option>
-                {categories.map(c => (
+                {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -259,12 +287,16 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             </label>
             <select
               value={type}
-              onChange={e => setType(e.target.value as 'weight' | 'unit')}
+              onChange={(e) => setType(e.target.value as "weight" | "unit")}
               className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition-all text-sm bg-white"
               data-testid="product-type-select"
             >
-              <option value="weight">Por Peso (Bolsa / Fraccionado en Kg)</option>
-              <option value="unit">Por Unidad (Accesorios, Pipetas, etc.)</option>
+              <option value="weight">
+                Por Peso (Bolsa / Fraccionado en Kg)
+              </option>
+              <option value="unit">
+                Por Unidad (Accesorios, Pipetas, etc.)
+              </option>
             </select>
           </div>
         </div>
@@ -274,7 +306,9 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
           <div className="flex flex-wrap items-center gap-2 text-slate-800">
             <Layers className="w-4 h-4 text-[#2563EB]" />
             <span className="font-semibold text-sm">Presentación Inicial</span>
-            <span className="text-xs text-slate-400 font-normal">(podrás agregar más presentaciones luego)</span>
+            <span className="text-xs text-slate-400 font-normal">
+              (podrás agregar más presentaciones luego)
+            </span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -285,14 +319,16 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
               <input
                 type="text"
                 value={presName}
-                onChange={e => setPresName(e.target.value)}
+                onChange={(e) => setPresName(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] bg-white outline-none"
-                placeholder={type === 'weight' ? 'Ej: Bolsa 20kg' : 'Ej: Unidad'}
+                placeholder={
+                  type === "weight" ? "Ej: Bolsa 20kg" : "Ej: Unidad"
+                }
                 data-testid="presentation-name-input"
               />
             </div>
 
-            {type === 'weight' ? (
+            {type === "weight" ? (
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   Peso del Bulto (kg)
@@ -302,7 +338,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                   step="0.1"
                   min="0.1"
                   value={weightKg}
-                  onChange={e => setWeightKg(e.target.value)}
+                  onChange={(e) => setWeightKg(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] bg-white outline-none"
                   placeholder="20"
                   data-testid="presentation-weight-input"
@@ -318,7 +354,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                   step="1"
                   min="0"
                   value={initialStock}
-                  onChange={e => setInitialStock(e.target.value)}
+                  onChange={(e) => setInitialStock(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] bg-white outline-none"
                   placeholder="0"
                   data-testid="presentation-stock-input"
@@ -333,13 +369,15 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                 Precio de Venta ($)
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                  $
+                </span>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   value={priceBulk}
-                  onChange={e => setPriceBulk(e.target.value)}
+                  onChange={(e) => setPriceBulk(e.target.value)}
                   className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#10B981] bg-white outline-none"
                   placeholder="30000"
                   data-testid="presentation-price-input"
@@ -352,13 +390,15 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                 Costo de Compra ($)
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                  $
+                </span>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   value={cost}
-                  onChange={e => setCost(e.target.value)}
+                  onChange={(e) => setCost(e.target.value)}
                   className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] bg-white outline-none"
                   placeholder="25000"
                   data-testid="presentation-cost-input"
@@ -367,13 +407,15 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             </div>
           </div>
 
-          {type === 'weight' && (
+          {type === "weight" && (
             <>
               {/* Margen venta suelta */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   Margen adicional para venta suelta (%)
-                  <span className="ml-1 text-slate-400 font-normal">— recargo para venta fraccionada por kg</span>
+                  <span className="ml-1 text-slate-400 font-normal">
+                    — recargo para venta fraccionada por kg
+                  </span>
                 </label>
                 <div className="flex items-center gap-3">
                   <input
@@ -382,7 +424,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                     max="100"
                     step="1"
                     value={margenPct}
-                    onChange={e => setMargenPct(e.target.value)}
+                    onChange={(e) => setMargenPct(e.target.value)}
                     className="flex-1 accent-[#10B981]"
                   />
                   <div className="relative w-20">
@@ -392,10 +434,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                       max="100"
                       step="1"
                       value={margenPct}
-                      onChange={e => setMargenPct(e.target.value)}
+                      onChange={(e) => setMargenPct(e.target.value)}
                       className="w-full pr-5 pl-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center bg-white focus:ring-2 focus:ring-[#10B981] outline-none"
                     />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">%</span>
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                      %
+                    </span>
                   </div>
                 </div>
               </div>
@@ -410,7 +454,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                   step="0.001"
                   min="0"
                   value={initialStock}
-                  onChange={e => setInitialStock(e.target.value)}
+                  onChange={(e) => setInitialStock(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2563EB] bg-white outline-none"
                   placeholder="0"
                   data-testid="presentation-stock-input"
@@ -449,7 +493,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             data-testid="submit-new-product"
           >
             <PackageCheck className="w-4 h-4" />
-            {loading ? 'Guardando...' : 'Guardar producto y presentación'}
+            {loading ? "Guardando..." : "Guardar producto y presentación"}
           </button>
         </div>
       </form>

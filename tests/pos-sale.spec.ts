@@ -10,7 +10,10 @@ async function openPos(page: Page): Promise<void> {
 
 async function selectProduct(page: Page, product: string, presentation: string): Promise<void> {
   await page.getByLabel('Producto').selectOption({ label: product });
-  await page.getByLabel('Presentación').selectOption({ label: presentation });
+  const presentationSelect = page.getByLabel('Presentación');
+  const optionValue = await presentationSelect.locator('option').filter({ hasText: presentation }).getAttribute('value');
+  expect(optionValue).not.toBeNull();
+  await presentationSelect.selectOption(optionValue!);
 }
 
 test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', () => {
@@ -28,8 +31,7 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
     await expect(page.getByTestId('pos-input-value')).toHaveAttribute('placeholder', 'Ej.: 2,500 kg');
     await page.getByRole('button', { name: 'Bolsa completa' }).click();
     await expect(page.getByTestId('pos-input-value')).toHaveAttribute('placeholder', 'Ej.: 1 bolsa');
-    await page.getByLabel('Producto').selectOption({ label: 'Correa QA' });
-    await page.getByLabel('Presentación').selectOption({ label: 'Unidad' });
+    await selectProduct(page, 'Correa QA', 'Unidad');
     await expect(page.getByTestId('pos-input-value')).toHaveAttribute('placeholder', 'Ej.: 1 unidad');
   });
 
@@ -65,11 +67,36 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
 
   test('por unidad: dos unidades descuentan 2 y cobran $16.000', async ({ page }) => {
     await selectProduct(page, 'Correa QA', 'Unidad');
+    await expect(page.getByTestId('pos-available-stock')).toContainText('15 uds');
     await page.getByTestId('pos-input-value').fill('2');
     const result = page.getByTestId('pos-calculation-result');
-    await expect(result).toContainText('2 u');
+    await expect(result).toContainText('2 uds');
     await expect(result).toContainText('$16000.00');
     await expect(result).toContainText('$10000.00');
+  });
+
+  test('muestra el stock y bloquea una cantidad de unidades superior a la disponible', async ({ page }) => {
+    await selectProduct(page, 'Correa QA', 'Unidad');
+    await expect(page.getByLabel('Presentación').locator('option').last()).toContainText('15 uds');
+    await page.getByTestId('pos-input-value').fill('16');
+
+    const stockError = page.getByTestId('pos-stock-error');
+    await expect(stockError).toContainText('Stock insuficiente');
+    await expect(stockError).toContainText('Solicitado: 16 uds');
+    await expect(stockError).toContainText('Disponible: 15 uds');
+    await expect(page.getByTestId('pos-calculation-result')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Agregar al ticket' })).toBeDisabled();
+    await expect(page.getByText('El ticket está vacío')).toBeVisible();
+  });
+
+  test('bloquea por importe cuando el peso calculado supera el stock', async ({ page }) => {
+    await selectProduct(page, 'Alimento QA', 'Bolsa 20 kg');
+    await expect(page.getByTestId('pos-available-stock')).toContainText('200.000 kg');
+    await page.getByTestId('pos-input-value').fill('400000');
+
+    await expect(page.getByTestId('pos-stock-error')).toContainText('228.571 kg');
+    await expect(page.getByTestId('pos-calculation-result')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Agregar al ticket' })).toBeDisabled();
   });
 
   test('envía al RPC solo modalidad, entrada y pago; no totales del cliente', async ({ page }) => {
@@ -85,6 +112,61 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
     await page.getByRole('button', { name: 'Cobrar ticket' }).click();
     await expect.poll(() => rpcBody).toBeTruthy();
     expect(rpcBody).toEqual({ p_payment_method: 'transferencia', p_items: [{ presentation_id: mockCatalog.products[0].product_presentations[0].id, mode: 'amount', amount: '3000.00' }] });
+    await expect(page.getByRole('heading', { name: 'Venta cobrada' })).toBeVisible();
+    await expect(page.getByText(/\$\s*3\.000,00.*Transferencia/)).toBeVisible();
+    await page.getByRole('button', { name: 'Nueva venta' }).click();
+    await expect(page.getByText('El ticket está vacío')).toBeVisible();
+  });
+
+  test('informa si el stock cambió antes de cobrar el ticket', async ({ page }) => {
+    await page.route('**/rest/v1/rpc/process_sale', route => route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'P0001', details: null, hint: null, message: 'INSUFFICIENT_STOCK' }),
+    }));
+    await selectProduct(page, 'Correa QA', 'Unidad');
+    await page.getByTestId('pos-input-value').fill('2');
+    await page.getByRole('button', { name: 'Agregar al ticket' }).click();
+    await page.getByRole('button', { name: 'Cobrar ticket' }).click();
+
+    await expect(page.getByRole('alert')).toContainText('El stock cambió y ya no alcanza');
+    await expect(page.getByTestId('pos-ticket-panel').getByText('Correa QA', { exact: true })).toBeVisible();
+  });
+
+  test('actualiza el stock mostrado después de una venta exitosa', async ({ page }) => {
+    const product = mockCatalog.products[1];
+    const presentation = product.product_presentations[0];
+    await page.route('**/rest/v1/rpc/process_sale', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        sale_id: '99999999-9999-4999-8999-999999999999',
+        total_amount: '16000.00',
+        total_cost: '10000.00',
+        items: [{
+          sale_item_id: '88888888-8888-4888-8888-888888888888',
+          product_id: product.id,
+          presentation_id: presentation.id,
+          mode: 'unit',
+          commercial_quantity: '2',
+          stock_quantity: '2',
+          unit_price: '8000.00',
+          subtotal: '16000.00',
+          line_cost: '10000.00',
+          stock_after: '13',
+        }],
+      }),
+    }));
+    await selectProduct(page, product.name, presentation.name);
+    await page.getByTestId('pos-input-value').fill('2');
+    await page.getByRole('button', { name: 'Agregar al ticket' }).click();
+    await page.getByRole('button', { name: 'Cobrar ticket' }).click();
+    await expect(page.getByRole('heading', { name: 'Venta cobrada' })).toBeVisible();
+    await page.getByRole('button', { name: 'Nueva venta' }).click();
+    await expect(page.getByText('El ticket está vacío')).toBeVisible();
+
+    await selectProduct(page, product.name, presentation.name);
+    await expect(page.getByTestId('pos-available-stock')).toContainText('13 uds');
   });
 
   test('rechaza exceso de decimales y fracciones en unidad/bolsa', async ({ page }) => {

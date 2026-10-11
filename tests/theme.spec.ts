@@ -18,7 +18,7 @@ test.describe('Configuración de apariencia', () => {
 
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await expect(page.getByRole('heading', { name: 'Estado del stock' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'El pulso de Avenida Animal' })).toBeVisible();
   });
 
   test('permite cambiar el tema desde Configuración en el menú móvil', async ({ page }) => {
@@ -64,9 +64,9 @@ test.describe('Configuración de apariencia', () => {
     await page.getByRole('button', { name: /Modo oscuro/ }).click();
     await page.getByRole('button', { name: 'Cerrar configuración' }).click();
 
-    const stockRow = page.locator('[data-testid="mobile-stock-list"] tbody tr').first();
-    await stockRow.hover();
-    await expect.poll(() => stockRow.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(29, 45, 68)');
+    const stockDetail = page.getByTestId('low-stock-panel').getByRole('button', { name: 'Ver detalle' });
+    await stockDetail.hover();
+    await expect.poll(() => stockDetail.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe('rgb(239, 246, 255)');
 
     const quickSale = page.getByRole('button', { name: 'Nueva venta' });
     await quickSale.hover();

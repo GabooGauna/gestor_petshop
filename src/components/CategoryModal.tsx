@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Swal from 'sweetalert2';
 import { productService } from '../services/productService';
 import type { Database } from '../types/database.types';
 import { X, Plus, FolderPlus, Trash2, Tag, Check, AlertCircle } from 'lucide-react';
@@ -9,7 +10,7 @@ interface CategoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   categories: Category[];
-  onCategoryChanged: () => void;
+  onCategoryChanged: () => void | Promise<void>;
 }
 
 export function CategoryModal({ isOpen, onClose, categories, onCategoryChanged }: CategoryModalProps) {
@@ -52,16 +53,39 @@ export function CategoryModal({ isOpen, onClose, categories, onCategoryChanged }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`¿Eliminar la categoría "${name}"? Los productos vinculados quedarán sin categoría.`)) {
-      return;
-    }
+    const confirmation = await Swal.fire({
+      icon: 'warning',
+      title: '¿Eliminar esta categoría?',
+      text: `“${name}” se eliminará. Los productos vinculados seguirán disponibles, pero quedarán sin categoría.`,
+      showCancelButton: true,
+      focusCancel: true,
+      reverseButtons: true,
+      confirmButtonText: 'Sí, eliminar categoría',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#DC2626',
+      cancelButtonColor: '#64748B',
+    });
+    if (!confirmation.isConfirmed) return;
+
     setDeletingId(id);
     setError(null);
+    setSuccess(null);
     try {
       await productService.deleteCategory(id);
-      onCategoryChanged();
+      await onCategoryChanged();
+      await Swal.fire({
+        icon: 'success',
+        title: 'Categoría eliminada',
+        text: `“${name}” se eliminó correctamente.`,
+        confirmButtonColor: '#2563EB',
+      });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al eliminar la categoría.');
+      await Swal.fire({
+        icon: 'error',
+        title: 'No se pudo eliminar',
+        text: err instanceof Error ? err.message : 'No se pudo eliminar la categoría.',
+        confirmButtonColor: '#2563EB',
+      });
     } finally {
       setDeletingId(null);
     }
@@ -125,7 +149,7 @@ export function CategoryModal({ isOpen, onClose, categories, onCategoryChanged }
 
           {/* Feedback banners */}
           {error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs" role="alert">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>{error}</span>
             </div>
@@ -166,6 +190,7 @@ export function CategoryModal({ isOpen, onClose, categories, onCategoryChanged }
                       disabled={deletingId === cat.id}
                       className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-60 group-hover:opacity-100 disabled:opacity-30"
                       title="Eliminar categoría"
+                      aria-label={`Eliminar categoría ${cat.name}`}
                       data-testid={`delete-category-${cat.id}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
