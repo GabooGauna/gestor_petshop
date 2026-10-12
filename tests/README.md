@@ -107,3 +107,29 @@ npm run test:db:isolated -- `
   -SyntheticPre001 `
   -DockerContainer 'supabase_db_petstock_test'
 ```
+
+### Actualización desde el esquema remoto actual
+
+Cuando el remoto ya tiene 018 y 019 históricas y 020 está pendiente, no se reutiliza el
+runner pre-017 ni se reaplican esas migraciones. Generar primero un dump `schema-only`
+de `public` en formato custom, revisar su TOC y producir además el SQL plano. Ninguno de
+los dos archivos se versiona.
+
+La base descartable debe clonarse desde una plantilla Supabase para conservar roles,
+`auth.uid()`, extensiones y ACL. El usuario que restaura necesita privilegios locales
+suficientes para los `ALTER DEFAULT PRIVILEGES` del dump. Ejecutar:
+
+```powershell
+$env:PGOPTIONS='-c petstock.environment=e2e'
+npm run test:db:current-upgrade -- `
+  -Connection 'dbname=petstock_e2e_current_20261012 user=postgres' `
+  -BaselinePath 'C:\ruta\temporal\petstock-public-current.sql' `
+  -BaselineTocPath 'C:\ruta\temporal\petstock-public-current.toc' `
+  -DockerContainer 'petstock_db_current_upgrade_20261012'
+```
+
+Este runner exige el fingerprint histórico real, carga fixtures de preservación,
+aplica 020 y la correctiva 021 en transacciones independientes, comprueba sus
+postcondiciones y vuelve a ejecutar contratos y carreras concurrentes. La evidencia y
+el runbook de producción están en
+`tests/sql/REAL_SCHEMA_VALIDATION_2026-10-12.md`.
