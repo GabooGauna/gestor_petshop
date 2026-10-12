@@ -10,9 +10,6 @@ begin
     raise exception 'PETSTOCK_E2E_DATABASE_REQUIRED'
       using hint = 'Run with PGOPTIONS="-c petstock.environment=e2e" against an isolated database.';
   end if;
-  if not exists (select 1 from auth.users) then
-    raise exception 'PETSTOCK_AUTH_USERS_REQUIRED';
-  end if;
   if exists (
     select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relname in (
@@ -66,6 +63,13 @@ begin
   begin
     update public.product_presentations set cost=1 where id='10000000-0000-4000-8000-000000000005';
     raise exception 'ASSERT_DIRECT_REPLACEMENT_COST_UPDATE_WAS_ALLOWED';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.product_presentations
+    set product_id='10000000-0000-4000-8000-000000000004'
+    where id='10000000-0000-4000-8000-000000000005';
+    raise exception 'ASSERT_PRESENTATION_REPARENT_WAS_ALLOWED';
   exception when insufficient_privilege then null;
   end;
   begin
@@ -407,6 +411,13 @@ begin
     raise exception 'ASSERT_ARCHIVED_PRODUCT_PRESENTATION_CREATED';
   exception when raise_exception then
     if sqlerrm <> 'PRODUCT_NOT_FOUND' then raise; end if;
+  end;
+
+  begin
+    perform public.delete_presentation('10000000-0000-4000-8000-000000000005');
+    raise exception 'ASSERT_ARCHIVED_PRODUCT_PRESENTATION_DELETED';
+  exception when raise_exception then
+    if sqlerrm <> 'INACTIVE_PRODUCT' then raise; end if;
   end;
 
   begin

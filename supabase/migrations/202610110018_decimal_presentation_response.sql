@@ -25,6 +25,11 @@ begin
     raise exception using errcode = 'P0001', message = 'AUTHENTICATION_REQUIRED';
   end if;
 
+  -- Serialize presentation creation with product archival independently of
+  -- MVCC visibility. Namespace 1347638356 is reserved by PetStock tests/runtime
+  -- for this per-product transaction boundary.
+  perform pg_advisory_xact_lock(1347638356, hashtext(p_product_id::text));
+
   select * into v_product
   from public.products
   where id = p_product_id and status = 'active'

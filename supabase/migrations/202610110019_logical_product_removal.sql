@@ -14,6 +14,17 @@ begin
     raise exception using errcode = 'P0001', message = 'AUTHENTICATION_REQUIRED';
   end if;
 
+  -- Advisory -> sorted presentations -> product is the archival order. The
+  -- per-product advisory lock also serializes an invisible concurrent INSERT
+  -- from create_product_presentation, closing the MVCC phantom boundary.
+  perform pg_advisory_xact_lock(1347638356, hashtext(p_product_id::text));
+
+  perform 1
+  from public.product_presentations
+  where product_id = p_product_id
+  order by id
+  for update;
+
   select name into v_name
   from public.products
   where id = p_product_id and status = 'active'
@@ -22,16 +33,6 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'PRODUCT_NOT_FOUND';
   end if;
-
-  -- Inventory RPCs lock presentation rows before changing stock. Waiting for
-  -- the same rows makes archival a clear boundary for concurrent operations:
-  -- each mutation completes before the product becomes inactive or observes it
-  -- inactive afterwards.
-  perform 1
-  from public.product_presentations
-  where product_id = p_product_id
-  order by id
-  for update;
 
   update public.products
   set status = 'inactive'
@@ -78,6 +79,49 @@ alter policy presentations_authenticated_update on public.product_presentations
     )
   );
 
+-- A presentation identity is immutable. In particular, authenticated catalog
+-- edits must not reparent a row away from a product that was concurrently or
+-- previously archived.
+revoke update(product_id) on public.product_presentations from authenticated;
+
+-- RLS can qualify an UPDATE while the product is active and then wait on a
+-- presentation row held by delete_product. A BEFORE UPDATE trigger runs only
+-- after that row lock is acquired, so it can safely re-read the product and
+-- reject a write that crossed the archival boundary.
+create or replace function public.ensure_presentation_product_active_on_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_status text;
+begin
+  select p.status into v_status
+  from public.products p
+  where p.id = new.product_id
+  for key share;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'PRESENTATION_NOT_FOUND';
+  end if;
+  if v_status is distinct from 'active' then
+    raise exception using errcode = 'P0001', message = 'INACTIVE_PRODUCT';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists presentations_require_active_product_on_update
+  on public.product_presentations;
+create trigger presentations_require_active_product_on_update
+before update on public.product_presentations
+for each row execute function public.ensure_presentation_product_active_on_update();
+
+revoke execute on function public.ensure_presentation_product_active_on_update()
+  from public, anon, authenticated;
+
 create or replace function public.record_shrinkage(
   p_presentation_id uuid,
   p_quantity numeric,
@@ -90,6 +134,7 @@ set search_path = ''
 as $$
 declare
   v record;
+  v_product record;
   v_id uuid := gen_random_uuid();
   v_q numeric(10,3);
 begin
@@ -104,19 +149,30 @@ begin
   end if;
 
   v_q := p_quantity;
-  select pp.*, p.type product_type, p.status product_status into v
+  select pp.* into v
   from public.product_presentations pp
-  join public.products p on p.id = pp.product_id
   where pp.id = p_presentation_id
-  for update of pp;
+  for update;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'PRESENTATION_NOT_FOUND';
   end if;
-  if v.product_status is distinct from 'active' then
+
+  -- Product status is deliberately read in a second statement after the
+  -- presentation lock. If archival held that row, READ COMMITTED now sees the
+  -- committed inactive state instead of a stale joined snapshot.
+  select p.type, p.status into v_product
+  from public.products p
+  where p.id = v.product_id
+  for key share;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'PRESENTATION_NOT_FOUND';
+  end if;
+  if v_product.status is distinct from 'active' then
     raise exception using errcode = 'P0001', message = 'INACTIVE_PRODUCT';
   end if;
-  if v.product_type = 'unit' and v_q <> trunc(v_q) then
+  if v_product.type = 'unit' and v_q <> trunc(v_q) then
     raise exception using errcode = 'P0001', message = 'INVALID_QUANTITY';
   end if;
   if v.stock < v_q then
@@ -159,6 +215,7 @@ set search_path = ''
 as $$
 declare
   v record;
+  v_product record;
   v_id uuid := gen_random_uuid();
   v_stock numeric(10,3);
   v_delta numeric(10,3);
@@ -174,19 +231,29 @@ begin
   end if;
 
   v_stock := p_physical_stock;
-  select pp.*, p.type product_type, p.status product_status into v
+  select pp.* into v
   from public.product_presentations pp
-  join public.products p on p.id = pp.product_id
   where pp.id = p_presentation_id
-  for update of pp;
+  for update;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'PRESENTATION_NOT_FOUND';
   end if;
-  if v.product_status is distinct from 'active' then
+
+  -- Re-read the product only after the presentation lock is owned. This uses
+  -- the global presentations -> product order and avoids stale status.
+  select p.type, p.status into v_product
+  from public.products p
+  where p.id = v.product_id
+  for key share;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'PRESENTATION_NOT_FOUND';
+  end if;
+  if v_product.status is distinct from 'active' then
     raise exception using errcode = 'P0001', message = 'INACTIVE_PRODUCT';
   end if;
-  if v.product_type = 'unit' and v_stock <> trunc(v_stock) then
+  if v_product.type = 'unit' and v_stock <> trunc(v_stock) then
     raise exception using errcode = 'P0001', message = 'INVALID_PHYSICAL_STOCK';
   end if;
 
@@ -228,3 +295,59 @@ comment on function public.record_shrinkage(uuid, numeric, text) is
   'Atomically records shrinkage for an active product presentation.';
 comment on function public.record_stock_adjustment(uuid, numeric, text) is
   'Atomically records a physical-stock adjustment for an active product presentation.';
+
+create or replace function public.delete_presentation(p_presentation_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_presentation public.product_presentations%rowtype;
+  v_product_status text;
+begin
+  if auth.uid() is null then
+    raise exception using errcode = 'P0001', message = 'AUTHENTICATION_REQUIRED';
+  end if;
+
+  select pp.* into v_presentation
+  from public.product_presentations pp
+  where pp.id = p_presentation_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'PRESENTATION_NOT_FOUND';
+  end if;
+
+  select p.status into v_product_status
+  from public.products p
+  where p.id = v_presentation.product_id
+  for key share;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'PRESENTATION_NOT_FOUND';
+  end if;
+  if v_product_status is distinct from 'active' then
+    raise exception using errcode = 'P0001', message = 'INACTIVE_PRODUCT';
+  end if;
+
+  if exists (select 1 from public.sale_items where presentation_id = p_presentation_id)
+    or exists (select 1 from public.purchase_items where presentation_id = p_presentation_id)
+  then
+    raise exception using errcode = 'P0001', message = 'PRESENTATION_HAS_TRANSACTIONS';
+  end if;
+
+  delete from public.product_presentations where id = p_presentation_id;
+  return jsonb_build_object(
+    'presentation_id', p_presentation_id,
+    'name', v_presentation.name,
+    'deleted', true
+  );
+end;
+$$;
+
+revoke all on function public.delete_presentation(uuid) from public, anon;
+grant execute on function public.delete_presentation(uuid) to authenticated;
+
+comment on function public.delete_presentation(uuid) is
+  'Deletes an unused presentation only while its product remains active.';

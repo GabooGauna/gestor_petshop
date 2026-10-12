@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test:e2e": "playwright test",
     "test:e2e:safe": "playwright test tests/auth.spec.ts tests/catalog-deletion.spec.ts tests/catalog-editing.spec.ts tests/catalog-presentations.spec.ts tests/home-dashboard.spec.ts tests/reports-export.spec.ts tests/responsive-shell.spec.ts tests/theme.spec.ts tests/pos-sale.spec.ts tests/purchases-suppliers.spec.ts tests/movements.spec.ts tests/tests/health-check.spec.ts",
-    "test:db:isolated": "psql -v ON_ERROR_STOP=1 -f tests/sql/transactional_hardening.sql",
+    "test:db:isolated": "pwsh -NoProfile -File scripts/db/validate-migrations-018-020.ps1",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -36,6 +36,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",
     "globals": "^17.12.0",
+    "supabase": "^2.120.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.69.0",
     "vite": "^8.3.0"
