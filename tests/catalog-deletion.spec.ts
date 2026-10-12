@@ -22,18 +22,30 @@ test.describe('Catálogo — bajas seguras', () => {
     await expect(page.getByRole('heading', { name: 'Producto dado de baja' })).toBeVisible();
   });
 
-  test('solicita confirmación y elimina una presentación mediante RPC', async ({ page }) => {
+  test('solicita confirmación y archiva una presentación mediante RPC', async ({ page }) => {
     let requestBody: unknown;
-    await page.route('**/rest/v1/rpc/delete_presentation', async route => {
+    await page.route('**/rest/v1/rpc/archive_presentation', async route => {
       requestBody = route.request().postDataJSON();
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ deleted: true }) });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          presentation_id: mockCatalog.products[0].product_presentations[0].id,
+          product_id: mockCatalog.products[0].id,
+          name: mockCatalog.products[0].product_presentations[0].name,
+          status: 'inactive',
+          archived: true,
+          reactivated: false,
+        }),
+      });
     });
     await page.getByTestId(`toggle-presentations-${mockCatalog.products[0].id}`).click();
-    await page.getByRole('button', { name: 'Eliminar presentación Bolsa 20 kg' }).click();
-    await expect(page.getByRole('heading', { name: '¿Eliminar esta presentación?' })).toBeVisible();
-    await page.getByRole('button', { name: 'Sí, eliminar presentación' }).click();
+    await page.getByRole('button', { name: 'Archivar presentación Bolsa 20 kg' }).click();
+    await expect(page.getByRole('heading', { name: '¿Archivar esta presentación?' })).toBeVisible();
+    await expect(page.getByText(/stock, costo e historial se conservarán/i)).toBeVisible();
+    await page.getByRole('button', { name: 'Sí, archivar' }).click();
     await expect.poll(() => requestBody).toEqual({ p_presentation_id: mockCatalog.products[0].product_presentations[0].id });
-    await expect(page.getByRole('heading', { name: 'Presentación eliminada' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Presentación archivada' })).toBeVisible();
   });
 
   test('confirma con SweetAlert antes de eliminar una categoría', async ({ page }) => {

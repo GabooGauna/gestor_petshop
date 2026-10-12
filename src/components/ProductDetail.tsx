@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { productService, type CatalogPresentationUpdate } from '../services/productService';
 import type { Database } from '../types/database.types';
-import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Plus, Layers, Trash2, Archive } from 'lucide-react';
+import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Plus, Layers, Archive, RotateCcw } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 interface Presentation {
@@ -12,6 +12,7 @@ interface Presentation {
   cost: number;
   stock: number;
   weight_kg: number | null;
+  status: string;
 }
 
 interface Product {
@@ -66,13 +67,17 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
   const [newPresStock, setNewPresStock] = useState('0');
   const [newPresMargen, setNewPresMargen] = useState('10');
   const [savingNewPres, setSavingNewPres] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
   const [editingCategory, setEditingCategory] = useState(false);
   const [categoryDraft, setCategoryDraft] = useState(product.category_id ?? '');
   const [savingCategory, setSavingCategory] = useState(false);
 
   const isWeightProduct = product.type === 'weight';
   const presentations = product.product_presentations || [];
+  const activePresentations = presentations.filter(presentation => presentation.status !== 'inactive');
+  const archivedPresentations = presentations.filter(presentation => presentation.status === 'inactive');
+  const activeStock = activePresentations.reduce((sum, presentation) => sum + Number(presentation.stock || 0), 0);
+  const archivedStock = archivedPresentations.reduce((sum, presentation) => sum + Number(presentation.stock || 0), 0);
 
   const startEdit = (pres: Presentation) => {
     setEditingId(pres.id);
@@ -209,7 +214,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
       cancelButtonColor: '#64748B',
     });
     if (!confirmation.isConfirmed) return;
-    setDeletingId(product.id);
+    setChangingStatusId(product.id);
     try {
       await productService.deleteProduct(product.id);
       onUpdated();
@@ -217,33 +222,46 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
     } catch (err: unknown) {
       await Swal.fire({ icon: 'error', title: 'No se pudo dar de baja', text: errorMessage(err, 'No se pudo dar de baja el producto.'), confirmButtonColor: '#2563EB' });
     } finally {
-      setDeletingId(null);
+      setChangingStatusId(null);
     }
   };
 
-  const handleDeletePresentation = async (presentation: Presentation) => {
+  const handleArchivePresentation = async (presentation: Presentation) => {
     const confirmation = await Swal.fire({
       icon: 'warning',
-      title: '¿Eliminar esta presentación?',
-      text: `Se eliminarán “${presentation.name}”, su stock actual y sus movimientos de inventario. Esta acción no se puede deshacer.`,
+      title: '¿Archivar esta presentación?',
+      text: `“${presentation.name}” dejará de estar disponible para ventas, compras, ajustes y mermas. Su stock, costo e historial se conservarán y podrás reactivarla.`,
       showCancelButton: true,
       focusCancel: true,
       reverseButtons: true,
-      confirmButtonText: 'Sí, eliminar presentación',
+      confirmButtonText: 'Sí, archivar',
       cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#DC2626',
+      confirmButtonColor: '#D97706',
       cancelButtonColor: '#64748B',
     });
     if (!confirmation.isConfirmed) return;
-    setDeletingId(presentation.id);
+    setChangingStatusId(presentation.id);
     try {
-      await productService.deletePresentation(presentation.id);
+      await productService.archivePresentation(presentation.id);
       onUpdated();
-      await Swal.fire({ icon: 'success', title: 'Presentación eliminada', text: `“${presentation.name}” se eliminó correctamente.`, confirmButtonColor: '#2563EB' });
+      await Swal.fire({ icon: 'success', title: 'Presentación archivada', text: `“${presentation.name}” quedó fuera de las operaciones. Su stock, costo e historial siguen conservados.`, confirmButtonColor: '#2563EB' });
     } catch (err: unknown) {
-      await Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: errorMessage(err, 'No se pudo eliminar la presentación.'), confirmButtonColor: '#2563EB' });
+      await Swal.fire({ icon: 'error', title: 'No se pudo archivar', text: errorMessage(err, 'No se pudo archivar la presentación.'), confirmButtonColor: '#2563EB' });
     } finally {
-      setDeletingId(null);
+      setChangingStatusId(null);
+    }
+  };
+
+  const handleReactivatePresentation = async (presentation: Presentation) => {
+    setChangingStatusId(presentation.id);
+    try {
+      await productService.reactivatePresentation(presentation.id);
+      onUpdated();
+      await Swal.fire({ icon: 'success', title: 'Presentación reactivada', text: `“${presentation.name}” vuelve a estar disponible con el mismo stock y costo.`, confirmButtonColor: '#059669' });
+    } catch (err: unknown) {
+      await Swal.fire({ icon: 'error', title: 'No se pudo reactivar', text: errorMessage(err, 'No se pudo reactivar la presentación.'), confirmButtonColor: '#2563EB' });
+    } finally {
+      setChangingStatusId(null);
     }
   };
 
@@ -275,7 +293,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
     }
   };
 
-  const hasMissingPrice = presentations.length === 0 || presentations.some(p => {
+  const hasMissingPrice = activePresentations.length === 0 || activePresentations.some(p => {
     const effective = isWeightProduct ? (p.price_per_kg ?? p.price) : p.price;
     return !effective || effective === 0;
   });
@@ -328,7 +346,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
             {hasMissingPrice && (
               <div className="flex items-center gap-1 text-amber-600 text-xs mt-0.5">
                 <AlertTriangle className="w-3 h-3" />
-                {presentations.length === 0 ? 'Sin presentaciones' : 'Precio sin configurar'}
+                {activePresentations.length === 0 ? 'Sin presentaciones activas' : 'Precio sin configurar'}
               </div>
             )}
           </div>
@@ -397,18 +415,23 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Stock total</span>
         <div className="flex flex-col">
           <span className={`text-sm font-semibold font-mono ${
-            presentations.reduce((sum, p) => sum + Number(p.stock || 0), 0) <= 0 
+            activeStock <= 0
               ? 'text-red-500' 
               : 'text-slate-800'
           }`}>
-            {presentations.reduce((sum, p) => sum + Number(p.stock || 0), 0).toLocaleString('es-AR', {
+            {activeStock.toLocaleString('es-AR', {
               minimumFractionDigits: isWeightProduct ? 0 : 0,
               maximumFractionDigits: isWeightProduct ? 3 : 0,
             })} {isWeightProduct ? 'kg' : 'uds'}
           </span>
           <span className="text-[11px] text-slate-400">
-            {presentations.length === 1 ? '1 presentación' : `${presentations.length} presentaciones`}
+            Disponible en {activePresentations.length === 1 ? '1 presentación activa' : `${activePresentations.length} presentaciones activas`}
           </span>
+          {archivedStock > 0 && (
+            <span className="mt-1 text-[11px] font-medium text-slate-500" data-testid={`archived-stock-${product.id}`}>
+              {archivedStock.toLocaleString('es-AR', { maximumFractionDigits: isWeightProduct ? 3 : 0 })} {isWeightProduct ? 'kg' : 'uds'} inmovilizados
+            </span>
+          )}
         </div>
       </td>
 
@@ -442,7 +465,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
             <button
               type="button"
               onClick={() => void handleArchiveProduct()}
-              disabled={deletingId !== null}
+              disabled={changingStatusId !== null}
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
               aria-label={`Dar de baja producto ${product.name}`}
               title="Dar de baja producto"
@@ -456,6 +479,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
             <div className="mt-1 space-y-3">
               {presentations.map(pres => {
                 const isEditing = editingId === pres.id;
+                const isArchived = pres.status === 'inactive';
                 const effectivePrice = isWeightProduct ? (pres.price_per_kg ?? pres.price) : pres.price;
                 const priceOk = effectivePrice && effectivePrice > 0;
 
@@ -636,10 +660,17 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                 return (
                   <div
                     key={pres.id}
-                    className="flex max-w-lg flex-col items-stretch gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-2xs sm:flex-row sm:items-center sm:justify-between"
+                    className={`flex max-w-lg flex-col items-stretch gap-3 rounded-lg border p-3 shadow-2xs sm:flex-row sm:items-center sm:justify-between ${isArchived ? 'border-slate-300 bg-slate-100/80' : 'border-slate-200 bg-white'}`}
+                    data-testid={`presentation-${pres.id}`}
                   >
                     <div className="flex flex-col gap-0.5 min-w-0">
-                      <span className="text-sm font-medium text-slate-700">{pres.name}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`text-sm font-medium ${isArchived ? 'text-slate-600' : 'text-slate-700'}`}>{pres.name}</span>
+                        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${isArchived ? 'border-slate-300 bg-white text-slate-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${isArchived ? 'bg-slate-400' : 'bg-emerald-500'}`} />
+                          {isArchived ? 'Archivada' : 'Activa'}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
                         {isWeightProduct ? (
                           <>
@@ -692,23 +723,23 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                     <div className="flex shrink-0 items-center justify-end gap-1 sm:ml-3">
                       <button
                         onClick={() => startEdit(pres)}
+                        disabled={isArchived || changingStatusId !== null}
                         data-testid={`edit-presentation-${pres.id}`}
-                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-blue-50 hover:text-[#2563EB]"
-                        title="Editar presentación"
+                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-blue-50 hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                        title={isArchived ? 'Reactivá la presentación para editarla' : 'Editar presentación'}
                         aria-label={`Editar presentación ${pres.name}`}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeletePresentation(pres)}
-                        disabled={deletingId !== null}
-                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                        title="Eliminar presentación"
-                        aria-label={`Eliminar presentación ${pres.name}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {isArchived ? (
+                        <button type="button" onClick={() => void handleReactivatePresentation(pres)} disabled={changingStatusId !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50" aria-label={`Reactivar presentación ${pres.name}`} data-testid={`reactivate-presentation-${pres.id}`}>
+                          <RotateCcw className="h-3.5 w-3.5" />{changingStatusId === pres.id ? 'Reactivando…' : 'Reactivar'}
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => void handleArchivePresentation(pres)} disabled={changingStatusId !== null} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50" title="Archivar presentación" aria-label={`Archivar presentación ${pres.name}`} data-testid={`archive-presentation-${pres.id}`}>
+                          <Archive className="h-3.5 w-3.5" />{changingStatusId === pres.id ? 'Archivando…' : 'Archivar'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

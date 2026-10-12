@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Connection,
   [string]$BaselinePath,
   [switch]$SyntheticPre001,
+  [switch]$Current022,
   [string]$Psql = 'psql',
   [string]$DockerContainer
 )
@@ -13,11 +14,14 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if ($Connection -match '(?i)postgres(?:ql)?://[^/@:]+:[^/@]+@' -or $Connection -match '(?i)(^|\s)password=') {
   throw 'Do not put passwords in -Connection. Use a temporary PGPASSFILE or an interactive prompt.'
 }
+if ($SyntheticPre001 -and $Current022) {
+  throw 'Do not combine -SyntheticPre001 with -Current022.'
+}
 if ($SyntheticPre001) {
   if ($BaselinePath) { throw 'Do not combine -SyntheticPre001 with -BaselinePath.' }
   $BaselinePath = Join-Path $repoRoot 'tests/sql/synthetic_pre_001_baseline.sql'
 } elseif (-not $BaselinePath) {
-  throw 'Supply -BaselinePath for an external schema-only 017 dump, or use -SyntheticPre001.'
+  throw 'Supply -BaselinePath for an external dump, or use -SyntheticPre001.'
 }
 if (-not (Test-Path -LiteralPath $BaselinePath -PathType Leaf)) { throw "Baseline not found: $BaselinePath" }
 $clientCommand = if ($DockerContainer) { 'docker' } else { $Psql }
@@ -135,10 +139,17 @@ if ($existingRun.Process.ExitCode -ne 0 -or $existing -ne '0') {
 $baselineResolved = (Resolve-Path -LiteralPath $BaselinePath).Path
 $baseline = [IO.File]::ReadAllText($baselineResolved)
 $baselineHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $baselineResolved).Hash.ToLowerInvariant()
-if (-not $SyntheticPre001 -and $baseline -match '(?im)^\s*(copy\s+|insert\s+into\s+)') {
+if (-not $SyntheticPre001 -and -not $Current022 -and $baseline -match '(?im)^\s*(copy\s+|insert\s+into\s+)') {
   throw 'Baseline contains data statements. Supply a reviewed plain-text schema-only SQL dump through migration 017.'
 }
-Write-Host $(if ($SyntheticPre001) { 'Restoring synthetic pre-001 test fixture...' } else { 'Restoring reviewed schema-only baseline 017...' })
+if ($Current022 -and $baselineResolved.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+  throw 'The current production-derived backup must remain outside the repository.'
+}
+if ($baseline -match '(?im)CREATE\s+TABLE\s+(auth|storage)\.' -or
+    $baseline -match '(?im)sb_secret_|postgres(?:ql)?://\S+:\S+@|password\s*=') {
+  throw 'Baseline contains a managed-schema object or possible secret.'
+}
+Write-Host $(if ($SyntheticPre001) { 'Restoring synthetic pre-001 test fixture...' } elseif ($Current022) { 'Restoring reviewed current public backup with data...' } else { 'Restoring reviewed schema-only baseline 017...' })
 Invoke-PsqlInput $baseline 'baseline restore'
 
 if ($SyntheticPre001) {
@@ -170,22 +181,33 @@ end
     }
   }
 }
-Invoke-PsqlFile 'tests/sql/preflight_017.sql' 'baseline 017 preflight'
+if ($Current022) {
+  Invoke-PsqlFile 'tests/sql/production_preflight_022.sql' 'current 020/021 schema preflight for 022'
+} else {
+  Invoke-PsqlFile 'tests/sql/preflight_017.sql' 'baseline 017 preflight'
+}
 
 $meta = @"
 create schema if not exists petstock_test;
 create table if not exists petstock_test.migration_history(
   version text primary key, sha256 text not null, applied_at timestamptz not null default clock_timestamp()
 );
-insert into petstock_test.migration_history(version,sha256) values('baseline_017','$baselineHash');
+insert into petstock_test.migration_history(version,sha256) values('$(if ($Current022) { 'baseline_current_021' } else { 'baseline_017' })','$baselineHash');
 "@
 Invoke-PsqlInput $meta 'create isolated migration history'
 
-$migrations = @(
+$migrations = if ($Current022) { @(
+  @{ Version='022'; File='supabase/migrations/202610120022_logical_presentation_lifecycle.sql'; Post='tests/sql/postconditions_022.sql' }
+) } else { @(
   @{ Version='018'; File='supabase/migrations/202610110018_decimal_presentation_response.sql'; Post='tests/sql/postconditions_018.sql' },
   @{ Version='019'; File='supabase/migrations/202610110019_logical_product_removal.sql'; Post='tests/sql/postconditions_019.sql' },
-  @{ Version='020'; File='supabase/migrations/202610110020_last_purchase_cost_snapshot.sql'; Post='tests/sql/postconditions_020.sql' }
-)
+  @{ Version='020'; File='supabase/migrations/202610110020_last_purchase_cost_snapshot.sql'; Post='tests/sql/postconditions_020.sql' },
+  @{ Version='021'; File='supabase/migrations/202610120021_reconcile_historical_transaction_hardening.sql'; Post='tests/sql/postconditions_021.sql' },
+  @{ Version='022'; File='supabase/migrations/202610120022_logical_presentation_lifecycle.sql'; Post='tests/sql/postconditions_022.sql' }
+) }
+if ($Current022) {
+  Invoke-PsqlFile 'tests/sql/current_022_preservation_setup.sql' 'capture current data preservation snapshot'
+}
 foreach ($migration in $migrations) {
   $migrationPath = Join-Path $repoRoot $migration.File
   $body = [IO.File]::ReadAllText($migrationPath)
@@ -199,7 +221,13 @@ foreach ($migration in $migrations) {
   Invoke-PsqlInput $wrapped "migration $($migration.Version)"
 }
 
+if ($Current022) {
+  Invoke-PsqlFile 'tests/sql/current_022_preservation_verify.sql' 'verify current data preservation after 022'
+  Invoke-PsqlFile 'tests/sql/production_postdeploy_022.sql' 'production postdeploy contracts for 022'
+}
+
 Invoke-PsqlFile 'tests/sql/transactional_hardening.sql' 'transactional contract suite'
+Invoke-PsqlFile 'tests/sql/presentation_lifecycle_contract.sql' 'presentation lifecycle contract suite'
 Invoke-PsqlFile 'tests/sql/concurrency_setup.sql' 'concurrency fixtures'
 
 $auth = "select set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000099',false);"
@@ -292,5 +320,35 @@ $orderB = Start-PsqlInput (SaleWorker 'multi_order' 'ba' $itemsBA)
 Complete-Psql $orderA 'multi-presentation worker AB'; Complete-Psql $orderB 'multi-presentation worker BA'
 Invoke-PsqlFile 'tests/sql/concurrency_verify.sql' 'concurrency postconditions'
 
+Invoke-PsqlFile 'tests/sql/presentation_lifecycle_concurrency_setup.sql' 'presentation lifecycle concurrency fixtures'
+
+function LifecycleOutcomeSql([string]$scenario,[string]$worker,[string]$operation) {
+  "$auth set role authenticated; do `$`$ declare v_started timestamptz := clock_timestamp(); begin begin $operation; insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('$scenario','$worker','ok',extract(epoch from clock_timestamp()-v_started)*1000); exception when raise_exception then insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('$scenario','$worker',sqlerrm,extract(epoch from clock_timestamp()-v_started)*1000); end; end `$`$;"
+}
+
+$lifecycleCases = @(
+  @{ Scenario='presentation_archive_sale'; App='petstock_pres_archive_sale'; Id='70000000-0000-4000-8000-000000000013'; Worker='sale'; Operation="perform public.process_sale('efectivo','[{`"presentation_id`":`"70000000-0000-4000-8000-000000000013`",`"mode`":`"unit`",`"quantity`":`"1`"}]'::jsonb)" },
+  @{ Scenario='presentation_archive_purchase'; App='petstock_pres_archive_purchase'; Id='70000000-0000-4000-8000-000000000014'; Worker='purchase'; Operation="perform public.process_purchase('70000000-0000-4000-8000-000000000002','PRESENTATION-RACE','[{`"presentation_id`":`"70000000-0000-4000-8000-000000000014`",`"quantity`":`"1`",`"unit_cost`":`"12.00`"}]'::jsonb)" },
+  @{ Scenario='presentation_archive_adjustment'; App='petstock_pres_archive_adjust'; Id='70000000-0000-4000-8000-000000000015'; Worker='adjustment'; Operation="perform public.record_stock_adjustment('70000000-0000-4000-8000-000000000015',1,'race')" },
+  @{ Scenario='presentation_archive_shrinkage'; App='petstock_pres_archive_shrink'; Id='70000000-0000-4000-8000-000000000016'; Worker='shrinkage'; Operation="perform public.record_shrinkage('70000000-0000-4000-8000-000000000016',1,'race')" }
+)
+foreach ($case in $lifecycleCases) {
+  $archiveOperation = "perform public.archive_presentation('$($case.Id)')"
+  $archiveWorkerSql = "set application_name='$($case.App)'; " + (LifecycleOutcomeSql $case.Scenario 'archive' $archiveOperation)
+  $archiveWorker = Start-PsqlInput $archiveWorkerSql
+  Wait-ForWorkerSleep $case.App
+  $mutationWorker = Start-PsqlInput (LifecycleOutcomeSql $case.Scenario $case.Worker $case.Operation)
+  Complete-Psql $archiveWorker "$($case.Scenario) archive"
+  Complete-Psql $mutationWorker "$($case.Scenario) mutation"
+}
+
+$saleWinnerSql = "set application_name='petstock_pres_sale_wins'; $auth select set_config('petstock.test_worker','presentation_sale_wins:sale',false); set role authenticated; do `$`$ declare v_started timestamptz := clock_timestamp(); begin perform public.process_sale('efectivo','[{`"presentation_id`":`"70000000-0000-4000-8000-000000000017`",`"mode`":`"unit`",`"quantity`":`"1`"}]'::jsonb); insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('presentation_sale_wins','sale','ok',extract(epoch from clock_timestamp()-v_started)*1000); end `$`$;"
+$saleWinner = Start-PsqlInput $saleWinnerSql
+Wait-ForWorkerSleep 'petstock_pres_sale_wins'
+$archiveLoser = Start-PsqlInput (LifecycleOutcomeSql 'presentation_sale_wins' 'archive' "perform public.archive_presentation('70000000-0000-4000-8000-000000000017')")
+Complete-Psql $saleWinner 'presentation sale-wins mutation'
+Complete-Psql $archiveLoser 'presentation sale-wins archive'
+Invoke-PsqlFile 'tests/sql/presentation_lifecycle_concurrency_verify.sql' 'presentation lifecycle concurrency postconditions'
+
 Invoke-PsqlInput "table petstock_test.migration_history order by applied_at;" 'migration history'
-Write-Host 'PASS: baseline 017 plus migrations 018-020, transactional and concurrent backend contracts.'
+Write-Host $(if ($Current022) { 'PASS: current 020/021 backup plus migration 022, preservation, lifecycle and concurrency contracts.' } else { 'PASS: baseline 017 plus migrations 018-022, lifecycle, transactional and concurrent backend contracts.' })

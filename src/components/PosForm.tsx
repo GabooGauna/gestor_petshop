@@ -38,9 +38,12 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
   const [payment, setPayment] = useState<PaymentMethod>('efectivo'); const [loading, setLoading] = useState(false); const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    void productService.getProducts()
+    void productService.getOperationalProducts()
       .then(data => {
-        if (active) setProducts(((data ?? []) as Product[]).filter(value => value.status === 'active'));
+        if (active) setProducts(((data ?? []) as Product[])
+          .filter(value => value.status === 'active')
+          .map(value => ({ ...value, product_presentations: value.product_presentations.filter(presentation => presentation.status === 'active') }))
+          .filter(value => value.product_presentations.length > 0));
       })
       .catch(() => {
         if (active) setCatalogError('No se pudo cargar el catálogo para la venta.');

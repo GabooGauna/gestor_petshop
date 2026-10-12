@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:e2e": "playwright test",
-    "test:e2e:safe": "playwright test tests/auth.spec.ts tests/catalog-deletion.spec.ts tests/catalog-editing.spec.ts tests/catalog-presentations.spec.ts tests/home-dashboard.spec.ts tests/reports-export.spec.ts tests/responsive-shell.spec.ts tests/theme.spec.ts tests/pos-sale.spec.ts tests/purchases-suppliers.spec.ts tests/movements.spec.ts tests/tests/health-check.spec.ts",
+    "test:e2e:safe": "playwright test tests/auth.spec.ts tests/catalog-deletion.spec.ts tests/catalog-editing.spec.ts tests/catalog-presentations.spec.ts tests/presentation-lifecycle.spec.ts tests/home-dashboard.spec.ts tests/reports-export.spec.ts tests/responsive-shell.spec.ts tests/theme.spec.ts tests/pos-sale.spec.ts tests/purchases-suppliers.spec.ts tests/movements.spec.ts tests/tests/health-check.spec.ts",
     "test:db:isolated": "pwsh -NoProfile -File scripts/db/validate-migrations-018-020.ps1",
     "test:db:current-upgrade": "pwsh -NoProfile -File scripts/db/validate-current-remote-upgrade.ps1",
     "preview": "vite preview"

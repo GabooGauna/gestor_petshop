@@ -93,6 +93,7 @@ export type Database = {
           price_per_kg: number | null
           product_id: string | null
           stock: number
+          status: string
           weight_kg: number | null
         }
         Insert: {
@@ -104,6 +105,7 @@ export type Database = {
           price_per_kg?: number | null
           product_id?: string | null
           stock?: number
+          status?: string
           weight_kg?: number | null
         }
         Update: {
@@ -115,6 +117,7 @@ export type Database = {
           price_per_kg?: number | null
           product_id?: string | null
           stock?: number
+          status?: string
           weight_kg?: number | null
         }
         Relationships: [
@@ -409,6 +412,10 @@ export type Database = {
         }
         Returns: Json
       }
+      archive_presentation: {
+        Args: { p_presentation_id: string }
+        Returns: Json
+      }
       delete_presentation: {
         Args: { p_presentation_id: string }
         Returns: Json
@@ -477,6 +484,10 @@ export type Database = {
           p_presentation_id: string
           p_reason: string
         }
+        Returns: Json
+      }
+      reactivate_presentation: {
+        Args: { p_presentation_id: string }
         Returns: Json
       }
     }

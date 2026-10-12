@@ -20,6 +20,7 @@ interface Presentation {
   cost: number;
   stock: number;
   weight_kg: number | null;
+  status: string;
 }
 
 interface Product {
@@ -133,7 +134,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
 
     const [suppliersResult, productsResult, categoriesResult] = await Promise.allSettled([
       supplierService.getSuppliers(),
-      productService.getProducts(),
+      productService.getOperationalProducts(),
       productService.getCategories(),
     ]);
 
@@ -145,7 +146,10 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
     }
 
     if (productsResult.status === 'fulfilled') {
-      setProducts(((productsResult.value ?? []) as Product[]).filter(product => product.status === 'active'));
+      setProducts(((productsResult.value ?? []) as Product[])
+        .filter(product => product.status === 'active')
+        .map(product => ({ ...product, product_presentations: product.product_presentations.filter(presentation => presentation.status === 'active') }))
+        .filter(product => product.product_presentations.length > 0));
     } else {
       console.error('Error al cargar productos:', productsResult.reason);
       setProducts([]);
@@ -252,7 +256,10 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
       });
 
       // Recargar productos
-      const updatedProducts = ((await productService.getProducts()) as Product[]).filter(product => product.status === 'active');
+      const updatedProducts = ((await productService.getOperationalProducts()) as Product[])
+        .filter(product => product.status === 'active')
+        .map(product => ({ ...product, product_presentations: product.product_presentations.filter(presentation => presentation.status === 'active') }))
+        .filter(product => product.product_presentations.length > 0);
       setProducts(updatedProducts);
 
       const createdFull = updatedProducts.find(p => p.id === created.id);
@@ -324,8 +331,15 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
         price_per_kg: pricePerKgCalc,
       });
 
-      // Recargar productos
-      const updatedProducts = ((await productService.getProducts()) as Product[]).filter(product => product.status === 'active');
+      // Recargar únicamente el catálogo operable. El filtro defensivo evita que
+      // una respuesta desactualizada vuelva a ofrecer presentaciones archivadas.
+      const updatedProducts = ((await productService.getOperationalProducts()) as Product[])
+        .filter(product => product.status === 'active')
+        .map(product => ({
+          ...product,
+          product_presentations: product.product_presentations.filter(presentation => presentation.status === 'active'),
+        }))
+        .filter(product => product.product_presentations.length > 0);
       setProducts(updatedProducts);
 
       // Asignar a la fila

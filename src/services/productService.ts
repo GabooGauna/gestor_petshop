@@ -10,7 +10,7 @@ export type CatalogPresentationUpdate = Pick<PresentationUpdate, 'name' | 'weigh
 type Category = Database['public']['Tables']['categories']['Row'];
 type MoneyRpcValue = `${number}`;
 
-type ProductCreationErrorCode =
+export type ProductServiceErrorCode =
   | 'AUTHENTICATION_REQUIRED'
   | 'PRODUCT_NAME_REQUIRED'
   | 'PETSTOCK_PRODUCT_TYPE_INVALID'
@@ -23,17 +23,26 @@ type ProductCreationErrorCode =
   | 'PETSTOCK_WEIGHT_REQUIRED'
   | 'PETSTOCK_UNIT_PRESENTATION_HAS_WEIGHT_FIELDS'
   | 'PRODUCT_NOT_FOUND'
+  | 'PRESENTATION_NOT_FOUND'
+  | 'INACTIVE_PRODUCT'
+  | 'INACTIVE_PRESENTATION'
+  | 'PRESENTATION_ALREADY_INACTIVE'
+  | 'PRESENTATION_ALREADY_ACTIVE'
   | 'NUMERIC_OVERFLOW'
   | 'PETSTOCK_INVALID_PRODUCT_RESPONSE'
   | 'PETSTOCK_INVALID_PRESENTATION_RESPONSE'
+  | 'PETSTOCK_INVALID_PRESENTATION_LIFECYCLE_RESPONSE'
   | 'PRODUCT_CREATION_FAILED'
-  | 'PRESENTATION_CREATION_FAILED';
+  | 'PRESENTATION_CREATION_FAILED'
+  | 'PRESENTATION_UPDATE_FAILED'
+  | 'PRESENTATION_ARCHIVE_FAILED'
+  | 'PRESENTATION_REACTIVATION_FAILED';
 
 export class ProductServiceError extends Error {
-  readonly code: ProductCreationErrorCode;
+  readonly code: ProductServiceErrorCode;
 
   constructor(
-    code: ProductCreationErrorCode,
+    code: ProductServiceErrorCode,
     message: string,
     options?: ErrorOptions,
   ) {
@@ -43,7 +52,7 @@ export class ProductServiceError extends Error {
   }
 }
 
-const productErrorMessages: Record<ProductCreationErrorCode, string> = {
+const productErrorMessages: Record<ProductServiceErrorCode, string> = {
   AUTHENTICATION_REQUIRED: 'Tu sesión venció. Volvé a iniciar sesión para crear el producto.',
   PRODUCT_NAME_REQUIRED: 'Ingresá el nombre del producto.',
   PETSTOCK_PRODUCT_TYPE_INVALID: 'Seleccioná un tipo de venta válido.',
@@ -56,14 +65,23 @@ const productErrorMessages: Record<ProductCreationErrorCode, string> = {
   PETSTOCK_WEIGHT_REQUIRED: 'Indicá un peso de bulto mayor que cero.',
   PETSTOCK_UNIT_PRESENTATION_HAS_WEIGHT_FIELDS: 'Los productos por unidad no pueden incluir peso ni precio por kilo.',
   PRODUCT_NOT_FOUND: 'El producto ya no existe o está inactivo.',
+  PRESENTATION_NOT_FOUND: 'La presentación ya no existe.',
+  INACTIVE_PRODUCT: 'El producto está inactivo. Reactivalo antes de administrar sus presentaciones.',
+  INACTIVE_PRESENTATION: 'La presentación está archivada y no admite cambios ni operaciones.',
+  PRESENTATION_ALREADY_INACTIVE: 'La presentación ya está archivada.',
+  PRESENTATION_ALREADY_ACTIVE: 'La presentación ya está activa.',
   NUMERIC_OVERFLOW: 'Uno de los valores ingresados supera el máximo permitido.',
   PETSTOCK_INVALID_PRODUCT_RESPONSE: 'El producto se creó, pero el servidor devolvió una respuesta inválida. Recargá el catálogo antes de reintentar.',
   PETSTOCK_INVALID_PRESENTATION_RESPONSE: 'La presentación se creó, pero el servidor devolvió una respuesta inválida. Recargá el producto antes de reintentar.',
+  PETSTOCK_INVALID_PRESENTATION_LIFECYCLE_RESPONSE: 'El estado cambió, pero el servidor devolvió una respuesta inválida. Recargá el catálogo antes de reintentar.',
   PRODUCT_CREATION_FAILED: 'No se pudo crear el producto. Revisá los datos e intentá nuevamente.',
   PRESENTATION_CREATION_FAILED: 'No se pudo crear la presentación. Revisá los datos e intentá nuevamente.',
+  PRESENTATION_UPDATE_FAILED: 'No se pudo actualizar la presentación. Revisá los datos e intentá nuevamente.',
+  PRESENTATION_ARCHIVE_FAILED: 'No se pudo archivar la presentación. Intentá nuevamente.',
+  PRESENTATION_REACTIVATION_FAILED: 'No se pudo reactivar la presentación. Intentá nuevamente.',
 };
 
-function productServiceError(code: ProductCreationErrorCode, cause?: unknown): ProductServiceError {
+function productServiceError(code: ProductServiceErrorCode, cause?: unknown): ProductServiceError {
   return new ProductServiceError(code, productErrorMessages[code], { cause });
 }
 
@@ -81,9 +99,9 @@ function errorText(error: unknown): string {
     .join(' ');
 }
 
-function creationError(error: unknown, fallback: 'PRODUCT_CREATION_FAILED' | 'PRESENTATION_CREATION_FAILED'): ProductServiceError {
+function serviceError(error: unknown, fallback: ProductServiceErrorCode): ProductServiceError {
   const text = errorText(error);
-  const knownCodes = Object.keys(productErrorMessages) as ProductCreationErrorCode[];
+  const knownCodes = Object.keys(productErrorMessages) as ProductServiceErrorCode[];
   const matchedCode = knownCodes.find(code => text.includes(code));
   return productServiceError(matchedCode ?? fallback, error);
 }
@@ -109,7 +127,19 @@ export interface CreatedPresentation {
   price: DecimalString;
   price_per_kg: DecimalString | null;
   stock: DecimalString;
+  status: PresentationStatus;
   created_at: string | null;
+}
+
+export type PresentationStatus = 'active' | 'inactive';
+
+export interface PresentationLifecycleResult {
+  presentation_id: string;
+  product_id: string;
+  name: string;
+  status: PresentationStatus;
+  archived: boolean;
+  reactivated: boolean;
 }
 
 function isCreatedProduct(value: unknown): value is CreatedProduct {
@@ -144,7 +174,8 @@ function parseCreatedPresentation(value: unknown): CreatedPresentation | null {
     || cost === null || price === null || stock === null
     || (row.weight_kg !== null && weight === null)
     || (row.price_per_kg !== null && pricePerKg === null)
-    || (row.created_at !== null && typeof row.created_at !== 'string')) return null;
+    || (row.created_at !== null && typeof row.created_at !== 'string')
+    || (row.status !== undefined && row.status !== 'active')) return null;
   return {
     id: row.id,
     product_id: row.product_id,
@@ -154,7 +185,27 @@ function parseCreatedPresentation(value: unknown): CreatedPresentation | null {
     price,
     price_per_kg: pricePerKg,
     stock,
+    status: 'active',
     created_at: row.created_at,
+  };
+}
+
+function parsePresentationLifecycleResult(value: unknown): PresentationLifecycleResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.presentation_id !== 'string'
+    || typeof row.product_id !== 'string'
+    || typeof row.name !== 'string'
+    || (row.status !== 'active' && row.status !== 'inactive')
+    || typeof row.archived !== 'boolean'
+    || typeof row.reactivated !== 'boolean') return null;
+  return {
+    presentation_id: row.presentation_id,
+    product_id: row.product_id,
+    name: row.name,
+    status: row.status,
+    archived: row.archived,
+    reactivated: row.reactivated,
   };
 }
 
@@ -190,12 +241,29 @@ export const productService = {
     throw new Error(error.message || 'No se pudo dar de baja el producto.');
   },
 
+  async archivePresentation(id: string): Promise<PresentationLifecycleResult> {
+    const { data, error } = await supabase.rpc('archive_presentation', { p_presentation_id: id });
+    if (error) throw serviceError(error, 'PRESENTATION_ARCHIVE_FAILED');
+    const result = parsePresentationLifecycleResult(data);
+    if (!result || result.status !== 'inactive' || !result.archived || result.reactivated) {
+      throw productServiceError('PETSTOCK_INVALID_PRESENTATION_LIFECYCLE_RESPONSE');
+    }
+    return result;
+  },
+
+  async reactivatePresentation(id: string): Promise<PresentationLifecycleResult> {
+    const { data, error } = await supabase.rpc('reactivate_presentation', { p_presentation_id: id });
+    if (error) throw serviceError(error, 'PRESENTATION_REACTIVATION_FAILED');
+    const result = parsePresentationLifecycleResult(data);
+    if (!result || result.status !== 'active' || result.archived || !result.reactivated) {
+      throw productServiceError('PETSTOCK_INVALID_PRESENTATION_LIFECYCLE_RESPONSE');
+    }
+    return result;
+  },
+
+  /** @deprecated Use archivePresentation; physical presentation deletion is unsupported. */
   async deletePresentation(id: string): Promise<void> {
-    const { error } = await supabase.rpc('delete_presentation', { p_presentation_id: id });
-    if (!error) return;
-    if (error.message.includes('PRESENTATION_HAS_TRANSACTIONS')) throw new Error('Esta presentación tiene ventas o compras registradas y debe conservarse para mantener el historial.');
-    if (error.message.includes('PRESENTATION_NOT_FOUND')) throw new Error('La presentación ya no existe.');
-    throw new Error(error.message || 'No se pudo eliminar la presentación.');
+    await this.archivePresentation(id);
   },
 
   async getProducts() {
@@ -203,6 +271,17 @@ export const productService = {
       .from('products')
       .select('*, product_presentations(*)')
       .eq('status', 'active')
+      .order('name');
+    if (error) throw error;
+    return data;
+  },
+
+  async getOperationalProducts() {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*, product_presentations!inner(*)')
+      .eq('status', 'active')
+      .eq('product_presentations.status', 'active')
       .order('name');
     if (error) throw error;
     return data;
@@ -242,7 +321,7 @@ export const productService = {
       p_price_per_kg: pricePerKg,
       p_initial_stock: params.presentation.initialStock ?? '0',
     });
-    if (error) throw creationError(error, 'PRODUCT_CREATION_FAILED');
+    if (error) throw serviceError(error, 'PRODUCT_CREATION_FAILED');
     if (!isCreatedProduct(data)) throw productServiceError('PETSTOCK_INVALID_PRODUCT_RESPONSE');
     return data;
   },
@@ -263,7 +342,7 @@ export const productService = {
       p_price_per_kg: pricePerKg,
       p_initial_stock: presentation.stock ?? 0,
     });
-    if (error) throw creationError(error, 'PRESENTATION_CREATION_FAILED');
+    if (error) throw serviceError(error, 'PRESENTATION_CREATION_FAILED');
     const created = parseCreatedPresentation(data);
     if (!created) throw productServiceError('PETSTOCK_INVALID_PRESENTATION_RESPONSE');
     return created;
@@ -282,7 +361,7 @@ export const productService = {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw new Error(error.message || 'No se pudo actualizar la presentación.');
+    if (error) throw serviceError(error, 'PRESENTATION_UPDATE_FAILED');
     return data;
   },
 

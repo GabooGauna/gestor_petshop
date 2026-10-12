@@ -13,6 +13,7 @@ interface Presentation {
   stock: number;
   weight_kg: number | null;
   product_id: string | null;
+  status: string;
 }
 
 interface Product {
@@ -470,6 +471,9 @@ interface InventoryViewProps {
 }
 
 export function InventoryView({ products, onStockChanged }: InventoryViewProps) {
+  const operationalProducts = products
+    .map(product => ({ ...product, product_presentations: product.product_presentations.filter(presentation => presentation.status === 'active') }))
+    .filter(product => product.product_presentations.length > 0);
   const [tab, setTab] = useState<Tab>('mermas');
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [movementCount, setMovementCount] = useState(0);
@@ -566,7 +570,7 @@ export function InventoryView({ products, onStockChanged }: InventoryViewProps) 
               </div>
             </div>
             <ShrinkageForm
-              products={products}
+              products={operationalProducts}
               onSuccess={result => handleSuccess('Merma registrada correctamente.', result)}
             />
           </div>
@@ -584,7 +588,7 @@ export function InventoryView({ products, onStockChanged }: InventoryViewProps) 
               </div>
             </div>
             <AdjustmentForm
-              products={products}
+              products={operationalProducts}
               onSuccess={result => handleSuccess('Ajuste registrado correctamente.', result)}
             />
           </div>

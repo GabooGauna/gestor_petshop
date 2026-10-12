@@ -11,7 +11,8 @@ test.describe('Catálogo — presentaciones con stock propio', () => {
     await expect(summary).toBeVisible();
     await expect(page.getByTestId('inventory-total-cost')).toContainText('325.000');
     await expect(page.getByTestId('inventory-total-sale-value')).toContainText('470.000');
-    await expect(summary).toContainText('Stock actual a costo registrado');
+    await expect(summary).toContainText('Stock activo a costo registrado');
+    await expect(summary).toContainText('Stock archivado inmovilizado');
     await expect(summary).toContainText('Importe bruto estimado antes de descontar costos');
   });
 

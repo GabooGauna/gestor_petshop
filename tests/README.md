@@ -64,17 +64,18 @@ npm run test:db:isolated -- `
 
 El runner se niega a usar hosts no locales, nombres de base no descartables, URLs con
 contraseña, un baseline con `COPY`/`INSERT`, o una base que ya contiene las tablas de
-negocio. Ejecuta un preflight de dependencias y discrepancias; aplica `018`, `019` y
-`020` secuencialmente, cada una dentro de su propia transacción junto con su
-postcondición y registro SHA-256; nunca usa `psql -f` en autocommit.
+negocio. Ejecuta un preflight de dependencias y discrepancias; aplica `018`–`022`
+secuencialmente, cada una dentro de su propia transacción junto con su postcondición
+y registro SHA-256; nunca usa `psql -f` en autocommit.
 
 Luego ejecuta la prueba transaccional existente y carreras reales con dos conexiones:
-venta/venta, compra/venta, archivo contra merma, ajuste, venta, compra y edición directa,
-alta de presentación contra archivo con ambos ganadores, y ventas multipresentación en
-orden inverso. También cubre las cuatro modalidades, stock exacto/insuficiente,
-redondeos, último costo, snapshots históricos, productos inactivos, permisos y
-reconciliación de Kardex. Todo el entorno se considera descartable y se elimina completo
-después de guardar el informe.
+venta/venta, compra/venta, archivo de producto contra merma, ajuste, venta, compra y
+edición directa, alta de presentación contra archivo de producto con ambos ganadores,
+ventas multipresentación en orden inverso y archivo de presentación contra venta,
+compra, ajuste y merma. También cubre las cuatro modalidades, stock
+exacto/insuficiente, redondeos, último costo, snapshots históricos, productos y
+presentaciones inactivas, permisos y reconciliación de Kardex. Todo el entorno se
+considera descartable y se elimina completo después de guardar el informe.
 
 ### Fixture sintético pre-001
 

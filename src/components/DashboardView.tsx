@@ -32,6 +32,7 @@ function getCatalogLowStock(products: DashboardProduct[]): DashboardAnalytics['l
       const restockThreshold = Math.max(Number.isFinite(configuredMinimum) ? configuredMinimum : 0, 5);
 
       return product.product_presentations
+        .filter(presentation => presentation.status === 'active')
         .filter(presentation => Number(presentation.stock) <= restockThreshold)
         .map(presentation => ({
           product_id: product.id,

@@ -87,6 +87,7 @@ test.describe('Compras v2 (backend simulado)', () => {
         price: 95000,
         price_per_kg: 4976.19,
         stock: 0,
+        status: 'active',
         created_at: '2026-10-11T15:00:00Z',
       }],
     };

@@ -29,18 +29,16 @@ const inventoryCurrency = new Intl.NumberFormat('es-AR', {
 });
 
 function calculateInventoryValuation(products: Product[]) {
-  let totalCost = 0;
-  let totalSaleValue = 0;
-  let stockedPresentations = 0;
-  let missingCost = 0;
-  let missingPrice = 0;
+  const active = { totalCost: 0, totalSaleValue: 0, stockedPresentations: 0, missingCost: 0, missingPrice: 0 };
+  const archived = { totalCost: 0, totalSaleValue: 0, stockedPresentations: 0, missingCost: 0, missingPrice: 0 };
 
   for (const product of products) {
     const isWeightProduct = product.type === 'weight';
     for (const presentation of product.product_presentations) {
       const stock = Number(presentation.stock);
       if (!Number.isFinite(stock) || stock <= 0) continue;
-      stockedPresentations += 1;
+      const valuation = presentation.status === 'inactive' ? archived : active;
+      valuation.stockedPresentations += 1;
 
       const cost = Number(presentation.cost);
       const price = Number(presentation.price);
@@ -48,25 +46,32 @@ function calculateInventoryValuation(products: Product[]) {
       const pricePerKg = Number(presentation.price_per_kg);
 
       if (isWeightProduct) {
-        if (cost > 0 && weightKg > 0) totalCost += stock * (cost / weightKg);
-        else missingCost += 1;
+        if (cost > 0 && weightKg > 0) valuation.totalCost += stock * (cost / weightKg);
+        else valuation.missingCost += 1;
 
         const effectivePricePerKg = pricePerKg > 0
           ? pricePerKg
           : weightKg > 0 && price > 0 ? price / weightKg : 0;
-        if (effectivePricePerKg > 0) totalSaleValue += stock * effectivePricePerKg;
-        else missingPrice += 1;
+        if (effectivePricePerKg > 0) valuation.totalSaleValue += stock * effectivePricePerKg;
+        else valuation.missingPrice += 1;
       } else {
-        if (cost > 0) totalCost += stock * cost;
-        else missingCost += 1;
+        if (cost > 0) valuation.totalCost += stock * cost;
+        else valuation.missingCost += 1;
 
-        if (price > 0) totalSaleValue += stock * price;
-        else missingPrice += 1;
+        if (price > 0) valuation.totalSaleValue += stock * price;
+        else valuation.missingPrice += 1;
       }
     }
   }
 
-  return { totalCost, totalSaleValue, stockedPresentations, missingCost, missingPrice };
+  return {
+    ...active,
+    archivedCost: archived.totalCost,
+    archivedSaleValue: archived.totalSaleValue,
+    archivedPresentations: archived.stockedPresentations,
+    archivedMissingCost: archived.missingCost,
+    archivedMissingPrice: archived.missingPrice,
+  };
 }
 
 function App() {
@@ -412,8 +417,8 @@ function App() {
               <article className="rounded-xl border border-slate-200 border-l-4 border-l-blue-500 bg-white px-5 py-4 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-slate-600">Costo del inventario</p>
-                    <p className="mt-1 text-xs text-slate-400">Stock actual a costo registrado</p>
+                    <p className="text-sm font-semibold text-slate-600">Costo disponible para operar</p>
+                    <p className="mt-1 text-xs text-slate-400">Stock activo a costo registrado</p>
                   </div>
                   <span className="rounded-lg bg-blue-50 p-2 text-blue-600" aria-hidden="true">
                     <Coins className="h-5 w-5" />
@@ -422,6 +427,13 @@ function App() {
                 <p className="mt-4 text-2xl font-bold tracking-tight text-slate-900" data-testid="inventory-total-cost">
                   {loading ? '—' : inventoryCurrency.format(inventoryValuation.totalCost)}
                 </p>
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-xs font-medium text-slate-500">Stock archivado inmovilizado</span>
+                    <strong className="text-sm text-slate-700" data-testid="inventory-archived-cost">{loading ? '—' : inventoryCurrency.format(inventoryValuation.archivedCost)}</strong>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400">Se conserva en el patrimonio, pero no está disponible para operaciones.</p>
+                </div>
                 <p className={`mt-2 flex items-center gap-1.5 text-xs ${inventoryValuation.missingCost > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
                   {inventoryValuation.missingCost > 0 && <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
                   {loading
@@ -437,8 +449,8 @@ function App() {
               <article className="rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white px-5 py-4 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-slate-600">Valor potencial de venta</p>
-                    <p className="mt-1 text-xs text-slate-400">Stock actual a precios vigentes</p>
+                    <p className="text-sm font-semibold text-slate-600">Valor potencial disponible</p>
+                    <p className="mt-1 text-xs text-slate-400">Stock activo a precios vigentes</p>
                   </div>
                   <span className="rounded-lg bg-emerald-50 p-2 text-emerald-600" aria-hidden="true">
                     <TrendingUp className="h-5 w-5" />
@@ -447,6 +459,13 @@ function App() {
                 <p className="mt-4 text-2xl font-bold tracking-tight text-emerald-800" data-testid="inventory-total-sale-value">
                   {loading ? '—' : inventoryCurrency.format(inventoryValuation.totalSaleValue)}
                 </p>
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-xs font-medium text-slate-500">Potencial del stock archivado</span>
+                    <strong className="text-sm text-slate-700" data-testid="inventory-archived-sale-value">{loading ? '—' : inventoryCurrency.format(inventoryValuation.archivedSaleValue)}</strong>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400">Valor informativo: requiere reactivación antes de vender.</p>
+                </div>
                 <p className={`mt-2 flex items-center gap-1.5 text-xs ${inventoryValuation.missingPrice > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
                   {inventoryValuation.missingPrice > 0 && <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
                   {loading

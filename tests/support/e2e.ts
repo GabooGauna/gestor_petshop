@@ -45,7 +45,7 @@ export const mockCatalog = {
       product_presentations: [{
         id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', product_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         name: 'Bolsa 20 kg', weight_kg: 20, cost: 25000, price: 35000,
-        price_per_kg: 1750, stock: 200, created_at: null,
+        price_per_kg: 1750, stock: 200, status: 'active', created_at: null,
       }],
     },
     {
@@ -55,7 +55,7 @@ export const mockCatalog = {
       product_presentations: [{
         id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', product_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
         name: 'Unidad', weight_kg: null, cost: 5000, price: 8000,
-        price_per_kg: null, stock: 15, created_at: null,
+        price_per_kg: null, stock: 15, status: 'active', created_at: null,
       }],
     },
   ],
@@ -206,7 +206,7 @@ export async function installMockBackend(page: Page): Promise<void> {
   await page.route('**/rest/v1/rpc/create_product_presentation', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
     id: '16161616-1616-4161-8161-161616161616', product_id: mockCatalog.products[1].id,
     name: 'Correa larga', weight_kg: null, cost: '8000.00', price: '8800.00',
-    price_per_kg: null, stock: '6.000', created_at: '2026-10-10T13:00:00Z',
+    price_per_kg: null, stock: '6.000', status: 'active', created_at: '2026-10-10T13:00:00Z',
   }) }));
 }
 
