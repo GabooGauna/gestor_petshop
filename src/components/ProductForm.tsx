@@ -198,10 +198,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
         {/* 1. Datos Generales */}
         <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+          <label htmlFor="product-name" className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
             Nombre del Producto <span className="text-red-500">*</span>
           </label>
           <input
+            id="product-name"
+            name="product-name"
             required
             type="text"
             value={name}
@@ -216,7 +218,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
           {/* Categoría */}
           <div>
             <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+              <label htmlFor={showNewCatInput ? "quick-category-name" : "product-category"} className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
                 Categoría <span className="text-red-500">*</span>
               </label>
               {!showNewCatInput ? (
@@ -246,6 +248,8 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             {showNewCatInput ? (
               <div className="flex gap-1.5 items-center">
                 <input
+                  id="quick-category-name"
+                  name="quick-category-name"
                   type="text"
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
@@ -273,6 +277,8 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
               </div>
             ) : (
               <select
+                id="product-category"
+                name="product-category"
                 required
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
@@ -291,10 +297,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
           {/* Tipo de venta */}
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+            <label htmlFor="product-type" className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
               Tipo de Venta <span className="text-red-500">*</span>
             </label>
             <select
+              id="product-type"
+              name="product-type"
               value={type}
               onChange={(e) => setType(e.target.value as "weight" | "unit")}
               className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent transition-all text-sm bg-white"
@@ -322,10 +330,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+              <label htmlFor="presentation-name" className="block text-xs font-semibold text-slate-600 mb-1">
                 Nombre de la Presentación
               </label>
               <input
+                id="presentation-name"
+                name="presentation-name"
                 type="text"
                 value={presName}
                 onChange={(e) => setPresName(e.target.value)}
@@ -339,10 +349,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
             {type === "weight" ? (
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                <label htmlFor="presentation-weight" className="block text-xs font-semibold text-slate-600 mb-1">
                   Peso del Bulto (kg)
                 </label>
                 <input
+                  id="presentation-weight"
+                  name="presentation-weight"
                   type="number"
                   step="0.1"
                   min="0.1"
@@ -355,10 +367,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
               </div>
             ) : (
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                <label htmlFor="presentation-stock-unit" className="block text-xs font-semibold text-slate-600 mb-1">
                   Stock Inicial (uds)
                 </label>
                 <input
+                  id="presentation-stock-unit"
+                  name="presentation-stock"
                   type="number"
                   step="1"
                   min="0"
@@ -374,7 +388,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+              <label htmlFor="presentation-price" className="block text-xs font-semibold text-slate-600 mb-1">
                 Precio de Venta ($)
               </label>
               <div className="relative">
@@ -382,6 +396,8 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                   $
                 </span>
                 <input
+                  id="presentation-price"
+                  name="presentation-price"
                   type="number"
                   step="0.01"
                   min="0"
@@ -395,7 +411,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+              <label htmlFor="presentation-cost" className="block text-xs font-semibold text-slate-600 mb-1">
                 Costo de Compra ($)
               </label>
               <div className="relative">
@@ -403,6 +419,8 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                   $
                 </span>
                 <input
+                  id="presentation-cost"
+                  name="presentation-cost"
                   type="number"
                   step="0.01"
                   min="0"
@@ -420,7 +438,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             <>
               {/* Margen venta suelta */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                <label htmlFor="presentation-margin-slider" className="block text-xs font-semibold text-slate-600 mb-1">
                   Margen adicional para venta suelta (%)
                   <span className="ml-1 text-slate-400 font-normal">
                     — recargo para venta fraccionada por kg
@@ -428,6 +446,8 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                 </label>
                 <div className="flex items-center gap-3">
                   <input
+                    id="presentation-margin-slider"
+                    name="presentation-margin-slider"
                     type="range"
                     min="0"
                     max="100"
@@ -438,6 +458,9 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
                   />
                   <div className="relative w-20">
                     <input
+                      id="presentation-margin-input"
+                      name="presentation-margin-input"
+                      aria-label="Margen adicional para venta suelta"
                       type="number"
                       min="0"
                       max="100"
@@ -455,10 +478,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
               {/* Stock inicial en kg */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                <label htmlFor="presentation-stock-weight" className="block text-xs font-semibold text-slate-600 mb-1">
                   Stock Inicial (kg)
                 </label>
                 <input
+                  id="presentation-stock-weight"
+                  name="presentation-stock"
                   type="number"
                   step="0.001"
                   min="0"
@@ -491,6 +516,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
             </label>
             <input
               id="presentation-min-stock"
+              name="presentation-min-stock"
               required
               type="number"
               min="0"
