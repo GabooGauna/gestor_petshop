@@ -330,13 +330,13 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
     <tr className="group block overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300 md:table-row md:rounded-none md:border-x-0 md:border-t-0 md:shadow-none md:hover:bg-slate-50/50">
       {/* Código */}
       <td className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 text-sm text-slate-500 md:table-cell md:border-b-0 md:px-6 md:py-3 md:pt-4 md:align-top">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Código</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 md:hidden">Código</span>
         <span>P{String(idx + 1).padStart(3, '0')}</span>
       </td>
 
       {/* Producto */}
       <td className="px-4 py-3 md:table-cell md:px-6 md:py-3 md:pt-4 md:align-top">
-        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Producto</span>
+        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-600 md:hidden">Producto</span>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200 text-slate-500 text-xs font-bold">
             {product.name.charAt(0)}
@@ -355,7 +355,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
 
       {/* Categoría */}
       <td className="flex items-start justify-between gap-3 border-t border-slate-100 px-4 py-2.5 text-sm text-slate-600 md:table-cell md:border-t-0 md:px-6 md:py-3 md:pt-3 md:align-top">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Categoría</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 md:hidden">Categoría</span>
         {editingCategory ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5 md:min-w-40">
             <select
@@ -406,13 +406,13 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
 
       {/* Tipo */}
       <td className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-sm capitalize text-slate-600 md:table-cell md:border-t-0 md:px-6 md:py-3 md:pt-4 md:align-top">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 md:hidden">Tipo</span>
         <span>{isWeightProduct ? 'Por Peso' : 'Unidad'}</span>
       </td>
 
       {/* Stock */}
       <td className="flex items-start justify-between border-t border-slate-100 px-4 py-2.5 md:table-cell md:border-t-0 md:px-6 md:py-3 md:pt-4 md:align-top" data-testid={`product-stock-${product.id}`}>
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Stock total</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 md:hidden">Stock total</span>
         <div className="flex flex-col">
           <span className={`text-sm font-semibold font-mono ${
             activeStock <= 0

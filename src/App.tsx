@@ -418,7 +418,7 @@ function App() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold text-slate-600">Costo disponible para operar</p>
-                    <p className="mt-1 text-xs text-slate-400">Stock activo a costo registrado</p>
+                    <p className="mt-1 text-xs text-slate-600">Stock activo a costo registrado</p>
                   </div>
                   <span className="rounded-lg bg-blue-50 p-2 text-blue-600" aria-hidden="true">
                     <Coins className="h-5 w-5" />
@@ -432,9 +432,9 @@ function App() {
                     <span className="text-xs font-medium text-slate-500">Stock archivado inmovilizado</span>
                     <strong className="text-sm text-slate-700" data-testid="inventory-archived-cost">{loading ? '—' : inventoryCurrency.format(inventoryValuation.archivedCost)}</strong>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">Se conserva en el patrimonio, pero no está disponible para operaciones.</p>
+                  <p className="mt-1 text-[11px] text-slate-600">Se conserva en el patrimonio, pero no está disponible para operaciones.</p>
                 </div>
-                <p className={`mt-2 flex items-center gap-1.5 text-xs ${inventoryValuation.missingCost > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
+                <p className={`mt-2 flex items-center gap-1.5 text-xs ${inventoryValuation.missingCost > 0 ? 'text-amber-700' : 'text-slate-600'}`}>
                   {inventoryValuation.missingCost > 0 && <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
                   {loading
                     ? 'Calculando stock actual…'
@@ -450,7 +450,7 @@ function App() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold text-slate-600">Valor potencial disponible</p>
-                    <p className="mt-1 text-xs text-slate-400">Stock activo a precios vigentes</p>
+                    <p className="mt-1 text-xs text-slate-600">Stock activo a precios vigentes</p>
                   </div>
                   <span className="rounded-lg bg-emerald-50 p-2 text-emerald-600" aria-hidden="true">
                     <TrendingUp className="h-5 w-5" />
@@ -464,9 +464,9 @@ function App() {
                     <span className="text-xs font-medium text-slate-500">Potencial del stock archivado</span>
                     <strong className="text-sm text-slate-700" data-testid="inventory-archived-sale-value">{loading ? '—' : inventoryCurrency.format(inventoryValuation.archivedSaleValue)}</strong>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">Valor informativo: requiere reactivación antes de vender.</p>
+                  <p className="mt-1 text-[11px] text-slate-600">Valor informativo: requiere reactivación antes de vender.</p>
                 </div>
-                <p className={`mt-2 flex items-center gap-1.5 text-xs ${inventoryValuation.missingPrice > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
+                <p className={`mt-2 flex items-center gap-1.5 text-xs ${inventoryValuation.missingPrice > 0 ? 'text-amber-700' : 'text-slate-600'}`}>
                   {inventoryValuation.missingPrice > 0 && <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
                   {loading
                     ? 'Calculando stock actual…'
@@ -484,6 +484,8 @@ function App() {
                 <div className="relative w-full sm:max-w-md sm:flex-1">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input 
+                    id="product-search"
+                    name="product-search"
                     type="text" 
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
@@ -495,6 +497,8 @@ function App() {
                 </div>
                 <div className="flex w-full gap-3 sm:w-auto">
                   <select
+                    id="product-category-filter"
+                    name="category-filter"
                     value={categoryFilter}
                     onChange={e => setCategoryFilter(e.target.value)}
                     aria-label="Filtrar productos por categoría"

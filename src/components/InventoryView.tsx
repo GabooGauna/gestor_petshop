@@ -127,8 +127,10 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Producto */}
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Producto</label>
+          <label htmlFor="shrinkage-product" className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Producto</label>
           <select
+            id="shrinkage-product"
+            name="product"
             value={form.productId}
             onChange={e => { set('productId', e.target.value); set('presentationId', ''); }}
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-red-400 outline-none bg-white"
@@ -141,8 +143,10 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
 
         {/* Presentación */}
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Presentación</label>
+          <label htmlFor="shrinkage-presentation" className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Presentación</label>
           <select
+            id="shrinkage-presentation"
+            name="presentation"
             value={form.presentationId}
             onChange={e => set('presentationId', e.target.value)}
             disabled={!form.productId}
@@ -161,10 +165,12 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
 
       {/* Cantidad */}
       <div>
-        <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+        <label htmlFor="shrinkage-quantity" className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
           Cantidad a dar de baja {isWeightProduct ? '(kg)' : '(uds)'}
         </label>
         <input
+          id="shrinkage-quantity"
+          name="quantity"
           type="number"
           step={isWeightProduct ? '0.001' : '1'}
           min={isWeightProduct ? '0.001' : '1'}
@@ -206,6 +212,9 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
         </div>
         {form.reason === 'Otro' && (
           <input
+            id="shrinkage-custom-reason"
+            name="custom-reason"
+            aria-label="Motivo personalizado de la merma"
             type="text"
             value={customReason}
             onChange={e => setCustomReason(e.target.value)}
@@ -291,8 +300,10 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Producto</label>
+          <label htmlFor="adjustment-product" className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Producto</label>
           <select
+            id="adjustment-product"
+            name="product"
             value={productId}
             onChange={e => { setProductId(e.target.value); setPresentationId(''); }}
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none bg-white"
@@ -303,8 +314,10 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Presentación</label>
+          <label htmlFor="adjustment-presentation" className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Presentación</label>
           <select
+            id="adjustment-presentation"
+            name="presentation"
             value={presentationId}
             onChange={e => setPresentationId(e.target.value)}
             disabled={!productId}
@@ -332,6 +345,9 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
           <div className="bg-white rounded-lg p-3 text-center border-2 border-amber-300">
             <div className="text-xs text-amber-600 font-medium mb-1">Stock físico contado</div>
             <input
+              id="adjustment-physical-stock"
+              name="physical-stock"
+              aria-label="Stock físico contado"
               type="number"
               step={isWeightProduct ? '0.001' : '1'}
               min="0"
@@ -364,10 +380,12 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
       )}
 
       <div>
-        <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+        <label htmlFor="adjustment-reason" className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
           Motivo <span className="text-red-500 font-bold">*</span>
         </label>
         <input
+          id="adjustment-reason"
+          name="reason"
           type="text"
           value={reason}
           onChange={e => setReason(e.target.value)}

@@ -149,12 +149,12 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium text-slate-700">Producto
-              <select value={productId} onChange={e => { const next = products.find(value => value.id === e.target.value); setProductId(e.target.value); setPresentationId(''); setMode(next?.type === 'weight' ? 'amount' : 'unit'); setInput(''); setError(null); }} disabled={catalogLoading || Boolean(catalogError)} aria-busy={catalogLoading} className="mt-1.5 w-full rounded-lg border border-slate-200 p-2.5 disabled:cursor-not-allowed disabled:bg-slate-50">
+              <select id="pos-product" name="product" value={productId} onChange={e => { const next = products.find(value => value.id === e.target.value); setProductId(e.target.value); setPresentationId(''); setMode(next?.type === 'weight' ? 'amount' : 'unit'); setInput(''); setError(null); }} disabled={catalogLoading || Boolean(catalogError)} aria-busy={catalogLoading} className="mt-1.5 w-full rounded-lg border border-slate-200 p-2.5 disabled:cursor-not-allowed disabled:bg-slate-50">
                 <option value="">{catalogLoading ? 'Cargando productos…' : catalogError ? 'Catálogo no disponible' : products.length === 0 ? 'No hay productos activos' : 'Seleccionar…'}</option>{products.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}
               </select>
             </label>
             <label className="text-sm font-medium text-slate-700">Presentación
-              <select value={presentationId} onChange={e => { setPresentationId(e.target.value); setInput(''); setError(null); }} disabled={!productId} className="mt-1.5 w-full rounded-lg border border-slate-200 p-2.5 disabled:bg-slate-50">
+              <select id="pos-presentation" name="presentation" value={presentationId} onChange={e => { setPresentationId(e.target.value); setInput(''); setError(null); }} disabled={!productId} className="mt-1.5 w-full rounded-lg border border-slate-200 p-2.5 disabled:bg-slate-50">
                 <option value="">Seleccionar…</option>{presentations.map(value => <option key={value.id} value={value.id}>{value.name} — {formatAvailableStock(Number(value.stock) || 0, product?.type)}</option>)}
               </select>
             </label>
@@ -173,7 +173,7 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
 
           <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 sm:p-5">
             <label className="text-sm font-medium text-blue-900">{inputLabel}
-              <input type="number" min="0" step={mode === 'amount' ? '0.01' : mode === 'weight' ? '0.001' : '1'} value={input} placeholder={availableStock > 0 ? inputPlaceholder : 'Sin stock disponible'} onChange={e => { setInput(e.target.value); setError(null); }} disabled={Boolean(presentation && availableStock <= 0)} aria-invalid={exceedsStock} aria-describedby={exceedsStock ? 'pos-stock-error' : undefined} className={`mt-2 w-full rounded-lg border bg-white p-4 text-2xl font-bold text-blue-950 outline-none placeholder:text-base placeholder:font-normal placeholder:text-slate-400 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-100 ${exceedsStock ? 'border-red-400 focus:ring-red-500' : 'border-blue-200 focus:ring-blue-500'}`} data-testid="pos-input-value" />
+              <input id="pos-input-value" name="sale-value" type="number" min="0" step={mode === 'amount' ? '0.01' : mode === 'weight' ? '0.001' : '1'} value={input} placeholder={availableStock > 0 ? inputPlaceholder : 'Sin stock disponible'} onChange={e => { setInput(e.target.value); setError(null); }} disabled={Boolean(presentation && availableStock <= 0)} aria-invalid={exceedsStock} aria-describedby={exceedsStock ? 'pos-stock-error' : undefined} className={`mt-2 w-full rounded-lg border bg-white p-4 text-2xl font-bold text-blue-950 outline-none placeholder:text-base placeholder:font-normal placeholder:text-slate-400 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-100 ${exceedsStock ? 'border-red-400 focus:ring-red-500' : 'border-blue-200 focus:ring-blue-500'}`} data-testid="pos-input-value" />
             </label>
             {presentation && input && (
               exceedsStock ? (
@@ -213,7 +213,7 @@ export function PosForm({ onSaleComplete, onCancel }: { onSaleComplete?: () => v
           </div>
 
           <label className="mb-4 text-sm font-medium text-slate-700">Medio de pago
-            <select value={payment} onChange={e => setPayment(e.target.value as PaymentMethod)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-2.5">{PAYMENTS.map(value => <option key={value.id} value={value.id}>{value.label}</option>)}</select>
+            <select id="pos-payment" name="payment-method" value={payment} onChange={e => setPayment(e.target.value as PaymentMethod)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-2.5">{PAYMENTS.map(value => <option key={value.id} value={value.id}>{value.label}</option>)}</select>
           </label>
           <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex justify-between text-sm text-slate-500"><span>Costo estimado</span><span>${totals.cost.toFixed(2)}</span></div>

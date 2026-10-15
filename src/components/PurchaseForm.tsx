@@ -502,7 +502,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
           {/* Proveedor */}
           <div className="md:col-span-2">
             <div className="mb-1.5 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+              <label htmlFor="purchase-supplier" className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
                 Proveedor <span className="text-red-500">*</span>
               </label>
               <div className="flex flex-wrap items-center gap-2">
@@ -573,6 +573,8 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
             )}
 
             <select
+              id="purchase-supplier"
+              name="supplier"
               required
               value={supplierId}
               onChange={e => setSupplierId(e.target.value)}
@@ -590,12 +592,14 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
 
           {/* Factura y Fecha */}
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+            <label htmlFor="purchase-invoice" className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
               N° Comprobante / Factura
             </label>
             <div className="relative">
               <FileText className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
+                id="purchase-invoice"
+                name="invoice"
                 type="text"
                 value={invoice}
                 onChange={e => setInvoice(e.target.value)}
@@ -659,6 +663,9 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                       <td className="col-span-2 p-0 xl:table-cell xl:p-3">
                         <span className="mb-1.5 block text-xs font-medium text-slate-500 xl:hidden">Producto</span>
                         <select
+                          id={`purchase-item-product-${row.tempId}`}
+                          name={`items.${idx}.product`}
+                          aria-label={`Producto de la fila ${idx + 1}`}
                           required
                           value={row.productId}
                           onChange={e => updateItem(idx, 'productId', e.target.value)}
@@ -700,6 +707,9 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                         <span className="mb-1.5 block text-xs font-medium text-slate-500 xl:hidden">Presentación</span>
                         <div className="flex items-center gap-1.5">
                           <select
+                            id={`purchase-item-presentation-${row.tempId}`}
+                            name={`items.${idx}.presentation`}
+                            aria-label={`Presentación de la fila ${idx + 1}`}
                             required
                             value={row.presentationId}
                             onChange={e => updateItem(idx, 'presentationId', e.target.value)}
@@ -739,6 +749,8 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                         </span>
                         <div className="relative min-w-0">
                           <input
+                            id={`purchase-item-quantity-${row.tempId}`}
+                            name={`items.${idx}.quantity`}
                             required
                             type="number"
                             step="1"
@@ -767,6 +779,9 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                         <div className="relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
                           <input
+                            id={`purchase-item-cost-${row.tempId}`}
+                            name={`items.${idx}.unitCost`}
+                            aria-label={`Costo unitario de la fila ${idx + 1}`}
                             required
                             type="number"
                             step="0.01"
