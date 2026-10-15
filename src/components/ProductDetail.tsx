@@ -424,7 +424,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
               maximumFractionDigits: isWeightProduct ? 3 : 0,
             })} {isWeightProduct ? 'kg' : 'uds'}
           </span>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] text-slate-600">
             Disponible en {activePresentations.length === 1 ? '1 presentación activa' : `${activePresentations.length} presentaciones activas`}
           </span>
           {archivedStock > 0 && (
@@ -466,7 +466,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
               type="button"
               onClick={() => void handleArchiveProduct()}
               disabled={changingStatusId !== null}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
               aria-label={`Dar de baja producto ${product.name}`}
               title="Dar de baja producto"
             >
