@@ -21,6 +21,15 @@ begin
     or (select duration_ms from petstock_test.outcomes where scenario='purchase_sale' and worker='sale')<900
   then raise exception 'ASSERT_CONCURRENT_PURCHASE_SALE_FAILED'; end if;
 
+  if (select count(*) from petstock_test.outcomes where scenario='minimum_purchase' and outcome='ok')<>2
+    or (select duration_ms from petstock_test.outcomes where scenario='minimum_purchase' and worker='purchase')<900
+    or (select stock from public.product_presentations where id='20000000-0000-4000-8000-000000000030')<>3
+    or (select cost from public.product_presentations where id='20000000-0000-4000-8000-000000000030')<>12
+    or (select min_stock from public.product_presentations where id='20000000-0000-4000-8000-000000000030')<>4
+    or (select count(*) from public.purchase_items where presentation_id='20000000-0000-4000-8000-000000000030')<>1
+    or (select count(*) from public.inventory_movements where presentation_id='20000000-0000-4000-8000-000000000030' and type='compra')<>1
+  then raise exception 'ASSERT_CONCURRENT_MINIMUM_PURCHASE_FAILED'; end if;
+
   if (select status from public.products where id='20000000-0000-4000-8000-000000000003')<>'inactive'
     or (select stock from public.product_presentations where id='20000000-0000-4000-8000-000000000023')<>2
     or (select outcome from petstock_test.outcomes where scenario='archive_mutation' and worker='mutation')<>'INACTIVE_PRODUCT'
@@ -83,7 +92,7 @@ begin
 
   if exists(
     select 1 from public.product_presentations pp
-    where pp.id::text like '20000000-0000-4000-8000-00000000002%'
+    where pp.id::text like '20000000-0000-4000-8000-0000000000%'
       and pp.stock <> coalesce((select sum(im.quantity) from public.inventory_movements im where im.presentation_id=pp.id),0)
   ) then raise exception 'ASSERT_CONCURRENT_KARDEX_RECONCILIATION_FAILED'; end if;
 end $$;
@@ -92,7 +101,9 @@ drop trigger petstock_test_delay_purchase on public.purchase_items;
 drop trigger petstock_test_delay_archive on public.products;
 drop trigger petstock_test_delay_sale on public.sales;
 drop trigger petstock_test_delay_presentation_create on public.product_presentations;
+drop trigger petstock_test_delay_min_stock_update on public.product_presentations;
 drop function petstock_test.delay_purchase();
 drop function petstock_test.delay_archive();
 drop function petstock_test.delay_sale();
 drop function petstock_test.delay_presentation_create();
+drop function petstock_test.delay_min_stock_update();

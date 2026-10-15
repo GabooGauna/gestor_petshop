@@ -2,6 +2,30 @@ import { expect, test } from '@playwright/test';
 import { installMockBackend, loginWithMockUser, mockCatalog } from './support/e2e';
 
 test.describe('Catálogo — presentaciones con stock propio', () => {
+  test('configura el mínimo de la presentación inicial al crear un producto', async ({ page }) => {
+    let rpcBody: unknown;
+    await installMockBackend(page);
+    await page.route('**/rest/v1/rpc/create_product_with_presentation', async route => {
+      rpcBody = route.request().postDataJSON();
+      await route.fallback();
+    });
+    await loginWithMockUser(page);
+    await page.getByRole('button', { name: 'Productos', exact: true }).click();
+    await page.getByTestId('btn-new-product').click();
+    await page.getByTestId('product-name-input').fill('Juguete mínimo QA');
+    await page.getByTestId('product-category-select').selectOption(mockCatalog.categories[0].id);
+    await page.getByTestId('product-type-select').selectOption('unit');
+    await page.getByTestId('presentation-min-stock-input').fill('4');
+    await page.getByTestId('submit-new-product').click();
+
+    await expect.poll(() => rpcBody).toMatchObject({
+      p_name: 'Juguete mínimo QA',
+      p_type: 'unit',
+      p_min_stock: 4,
+      p_initial_stock: '0',
+    });
+  });
+
   test('muestra el costo y el valor potencial de venta de todo el inventario', async ({ page }) => {
     await installMockBackend(page);
     await loginWithMockUser(page);
@@ -59,6 +83,7 @@ test.describe('Catálogo — presentaciones con stock propio', () => {
           price: '8800.00',
           price_per_kg: null,
           stock: '6.000',
+          min_stock: '3.000',
           created_at: '2026-10-10T13:00:00Z',
         }),
       });
@@ -72,6 +97,7 @@ test.describe('Catálogo — presentaciones con stock propio', () => {
 
     await page.getByTestId('new-pres-name-input').fill('Correa larga');
     await page.getByTestId('new-pres-stock-input').fill('6');
+    await page.getByTestId('new-pres-min-stock-input').fill('3');
     await page.getByTestId('new-pres-price-input').fill('8800');
     await page.getByTestId('new-pres-cost-input').fill('8000');
     await page.getByTestId('submit-new-presentation-btn').click();
@@ -84,6 +110,7 @@ test.describe('Catálogo — presentaciones con stock propio', () => {
       p_price: '8800.00',
       p_price_per_kg: null,
       p_initial_stock: 6,
+      p_min_stock: 3,
     });
     await expect(page.getByTestId('add-presentation-form')).toBeHidden();
   });

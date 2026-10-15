@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Database credentials and backups must remain outside the repository
+*.pgpass
+*.dump
+*.dump.dpapi
+*.backup
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

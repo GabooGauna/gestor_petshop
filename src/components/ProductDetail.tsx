@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { productService, type CatalogPresentationUpdate } from '../services/productService';
 import type { Database } from '../types/database.types';
 import { Pencil, X, Check, ChevronDown, ChevronUp, AlertTriangle, Calculator, Plus, Layers, Archive, RotateCcw } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { formatStockQuantity, isLowStock, isOutOfStock, stockUnit, validateMinimumStock } from '../lib/stockAlerts';
 
 interface Presentation {
   id: string;
+  product_id: string | null;
+  created_at: string | null;
   name: string;
   price: number;
   price_per_kg: number | null;
@@ -13,6 +16,7 @@ interface Presentation {
   stock: number;
   weight_kg: number | null;
   status: string;
+  min_stock: number;
 }
 
 interface Product {
@@ -28,7 +32,8 @@ interface ProductDetailProps {
   categoryName: string;
   categories: Database['public']['Tables']['categories']['Row'][];
   idx: number;
-  onUpdated: () => void;
+  onUpdated: (presentation?: Presentation) => void;
+  initiallyExpanded?: boolean;
 }
 
 // Estado de edición interno (todos los campos como string para los inputs)
@@ -38,6 +43,7 @@ interface EditState {
   margenPct: string;    // margen % extra para venta suelta
   weight_kg: string;
   priceUnit: string;    // solo para tipo 'unit'
+  minStock: string;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -52,8 +58,9 @@ function calcPricePerKg(priceBulk: number, weightKg: number, margenPct: number):
   return basePorKg * (1 + margenPct / 100);
 }
 
-export function ProductDetail({ product, categoryName, categories, idx, onUpdated }: ProductDetailProps) {
-  const [expanded, setExpanded] = useState(false);
+export function ProductDetail({ product, categoryName, categories, idx, onUpdated, initiallyExpanded = false }: ProductDetailProps) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const rowRef = useRef<HTMLTableRowElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -65,12 +72,21 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
   const [newPresCost, setNewPresCost] = useState('');
   const [newPresPrice, setNewPresPrice] = useState('');
   const [newPresStock, setNewPresStock] = useState('0');
+  const [newPresMinStock, setNewPresMinStock] = useState('0');
   const [newPresMargen, setNewPresMargen] = useState('10');
   const [savingNewPres, setSavingNewPres] = useState(false);
   const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
   const [editingCategory, setEditingCategory] = useState(false);
   const [categoryDraft, setCategoryDraft] = useState(product.category_id ?? '');
   const [savingCategory, setSavingCategory] = useState(false);
+
+  useEffect(() => {
+    if (!initiallyExpanded) return;
+    const frame = window.requestAnimationFrame(() => {
+      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initiallyExpanded]);
 
   const isWeightProduct = product.type === 'weight';
   const presentations = product.product_presentations || [];
@@ -95,6 +111,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
       margenPct: String(inferredMargen),
       weight_kg: pres.weight_kg != null ? String(pres.weight_kg) : '',
       priceUnit: pres.price > 0 ? String(pres.price) : '',
+      minStock: String(pres.min_stock ?? 0),
     });
   };
 
@@ -119,6 +136,18 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
       });
       return;
     }
+    const minimumStock = Number(editState.minStock);
+    const minimumError = validateMinimumStock(minimumStock, isWeightProduct ? 'weight' : 'unit');
+    if (minimumError) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Revisá el stock mínimo',
+        text: minimumError,
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#2563EB',
+      });
+      return;
+    }
     setSaving(true);
     try {
       const priceBulk = Number(editState.priceBulk) || 0;
@@ -131,16 +160,17 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
       const updates: CatalogPresentationUpdate = {
         name: editState.name,
         price: isWeightProduct ? priceBulk : Number(editState.priceUnit) || 0,
+        min_stock: minimumStock,
         ...(isWeightProduct && {
           price_per_kg: pricePerKgCalc || null,
           weight_kg: weightKg || null,
         }),
       };
 
-      await productService.updatePresentation(id, updates);
+      const updatedPresentation = await productService.updatePresentation(id, updates);
       setEditingId(null);
       setEditState(null);
-      onUpdated();
+      onUpdated(updatedPresentation);
     } catch (err: unknown) {
       await Swal.fire({ icon: 'error', title: 'No se pudo guardar', text: errorMessage(err, 'Revisá los datos e intentá nuevamente.'), confirmButtonColor: '#2563EB' });
     } finally {
@@ -166,6 +196,18 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
       });
       return;
     }
+    const minimumStock = Number(newPresMinStock);
+    const minimumError = validateMinimumStock(minimumStock, isWeightProduct ? 'weight' : 'unit');
+    if (minimumError) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Revisá el stock mínimo',
+        text: minimumError,
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#2563EB',
+      });
+      return;
+    }
 
     setSavingNewPres(true);
     try {
@@ -185,6 +227,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
         price_per_kg: pricePerKgCalc,
         weight_kg: weightNum,
         stock: initialStock,
+        min_stock: minimumStock,
       });
 
       setShowAddPres(false);
@@ -192,6 +235,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
       setNewPresCost('');
       setNewPresPrice('');
       setNewPresStock('0');
+      setNewPresMinStock('0');
       onUpdated();
     } catch (err: unknown) {
       await Swal.fire({ icon: 'error', title: 'No se pudo crear la presentación', text: errorMessage(err, 'Revisá los datos e intentá nuevamente.'), confirmButtonColor: '#2563EB' });
@@ -327,7 +371,7 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
   })();
 
   return (
-    <tr className="group block overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300 md:table-row md:rounded-none md:border-x-0 md:border-t-0 md:shadow-none md:hover:bg-slate-50/50">
+    <tr ref={rowRef} className={`group block overflow-hidden rounded-xl border bg-white shadow-sm transition-colors md:table-row md:rounded-none md:border-x-0 md:border-t-0 md:shadow-none ${initiallyExpanded ? 'border-blue-300 ring-2 ring-blue-100 md:bg-blue-50/40' : 'border-slate-200 hover:border-slate-300 md:hover:bg-slate-50/50'}`} data-testid={`product-row-${product.id}`}>
       {/* Código */}
       <td className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 text-sm text-slate-500 md:table-cell md:border-b-0 md:px-6 md:py-3 md:pt-4 md:align-top">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 md:hidden">Código</span>
@@ -482,6 +526,9 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                 const isArchived = pres.status === 'inactive';
                 const effectivePrice = isWeightProduct ? (pres.price_per_kg ?? pres.price) : pres.price;
                 const priceOk = effectivePrice && effectivePrice > 0;
+                const stockType = isWeightProduct ? 'weight' as const : 'unit' as const;
+                const presentationIsLow = isLowStock(pres.stock, pres.min_stock, pres.status);
+                const presentationIsOut = isOutOfStock(pres.stock);
 
                 if (isEditing && editState) {
                   // ── MODO EDICIÓN ────────────────────────────────────────────
@@ -634,6 +681,24 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                         </div>
                       )}
 
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                        <label htmlFor={`edit-min-stock-${pres.id}`} className="block text-xs font-semibold text-amber-900">
+                          Stock mínimo para reposición ({stockUnit(stockType)})
+                        </label>
+                        <input
+                          id={`edit-min-stock-${pres.id}`}
+                          required
+                          type="number"
+                          min="0"
+                          step={isWeightProduct ? '0.001' : '1'}
+                          value={editState.minStock}
+                          onChange={e => setProp('minStock', e.target.value)}
+                          className="mt-1.5 w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500 sm:max-w-44"
+                          data-testid={`edit-min-stock-${pres.id}`}
+                        />
+                        <p className="mt-1 text-[11px] leading-4 text-amber-800">La alerta se activa al llegar a este valor. Con 0, sólo al agotarse.</p>
+                      </div>
+
                       {/* Botones guardar/cancelar */}
                       <div className="flex justify-end gap-2 pt-1">
                         <button
@@ -670,6 +735,11 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                           <span className={`h-1.5 w-1.5 rounded-full ${isArchived ? 'bg-slate-400' : 'bg-emerald-500'}`} />
                           {isArchived ? 'Archivada' : 'Activa'}
                         </span>
+                        {presentationIsLow && (
+                          <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${presentationIsOut ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                            {presentationIsOut ? 'Agotada' : 'Stock bajo'}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
                         {isWeightProduct ? (
@@ -719,6 +789,9 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                           </>
                         )}
                       </div>
+                      <p className="text-[11px] font-medium text-slate-500" data-testid={`presentation-min-stock-${pres.id}`}>
+                        Mínimo de reposición: {formatStockQuantity(pres.min_stock, stockType)} {stockUnit(stockType)}
+                      </p>
                     </div>
                     <div className="flex shrink-0 items-center justify-end gap-1 sm:ml-3">
                       <button
@@ -792,7 +865,20 @@ export function ProductDetail({ product, categoryName, categories, idx, onUpdate
                         data-testid="new-pres-stock-input"
                       />
                     </div>
-                    <p className="text-[11px] leading-4 text-slate-500 sm:col-span-2">El saldo quedará registrado como apertura de esta presentación en el Kardex.</p>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Stock mínimo ({isWeightProduct ? 'kg' : 'uds'})</label>
+                      <input
+                        required
+                        type="number"
+                        min="0"
+                        step={isWeightProduct ? '0.001' : '1'}
+                        value={newPresMinStock}
+                        onChange={e => setNewPresMinStock(e.target.value)}
+                        className="w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                        data-testid="new-pres-min-stock-input"
+                      />
+                    </div>
+                    <p className="text-[11px] leading-4 text-slate-500 sm:col-span-2">El saldo quedará registrado como apertura en el Kardex. El mínimo sólo configura la alerta.</p>
                   </div>
 
                   {isWeightProduct && (

@@ -55,7 +55,8 @@ insert into public.products(id,name,category_id,type,status,min_stock) values
   ('20000000-0000-4000-8000-000000000008','Archive direct update race','20000000-0000-4000-8000-000000000011','unit','active',0),
   ('20000000-0000-4000-8000-000000000009','Archive adjustment race','20000000-0000-4000-8000-000000000011','unit','active',0),
   ('20000000-0000-4000-8000-000000000012','Create wins archive race','20000000-0000-4000-8000-000000000011','unit','active',0),
-  ('20000000-0000-4000-8000-000000000013','Archive wins create race','20000000-0000-4000-8000-000000000011','unit','active',0);
+  ('20000000-0000-4000-8000-000000000013','Archive wins create race','20000000-0000-4000-8000-000000000011','unit','active',0),
+  ('20000000-0000-4000-8000-000000000014','Minimum purchase race','20000000-0000-4000-8000-000000000011','unit','active',0);
 insert into public.product_presentations(id,product_id,name,cost,price,stock) values
   ('20000000-0000-4000-8000-000000000021','20000000-0000-4000-8000-000000000001','Unit',10,20,1),
   ('20000000-0000-4000-8000-000000000022','20000000-0000-4000-8000-000000000002','Unit',10,20,0),
@@ -65,14 +66,18 @@ insert into public.product_presentations(id,product_id,name,cost,price,stock) va
   ('20000000-0000-4000-8000-000000000026','20000000-0000-4000-8000-000000000006','Unit',10,20,2),
   ('20000000-0000-4000-8000-000000000027','20000000-0000-4000-8000-000000000007','Unit',10,20,0),
   ('20000000-0000-4000-8000-000000000028','20000000-0000-4000-8000-000000000008','Unit',10,20,2),
-  ('20000000-0000-4000-8000-000000000029','20000000-0000-4000-8000-000000000009','Unit',10,20,2);
+  ('20000000-0000-4000-8000-000000000029','20000000-0000-4000-8000-000000000009','Unit',10,20,2),
+  ('20000000-0000-4000-8000-000000000030','20000000-0000-4000-8000-000000000014','Unit',10,20,1);
+update public.product_presentations
+set min_stock = 1
+where id = '20000000-0000-4000-8000-000000000030';
 insert into public.inventory_movements(product_id,presentation_id,type,quantity,reason,reference_type,reference_id)
 select product_id,id,'ajuste',stock,'Concurrency opening','opening_balance',id
 from public.product_presentations
 where id in ('20000000-0000-4000-8000-000000000021','20000000-0000-4000-8000-000000000023',
              '20000000-0000-4000-8000-000000000024','20000000-0000-4000-8000-000000000025',
              '20000000-0000-4000-8000-000000000026','20000000-0000-4000-8000-000000000028',
-             '20000000-0000-4000-8000-000000000029');
+             '20000000-0000-4000-8000-000000000029','20000000-0000-4000-8000-000000000030');
 
 create or replace function petstock_test.delay_purchase() returns trigger language plpgsql as $$
 begin
@@ -120,3 +125,14 @@ end $$;
 drop trigger if exists petstock_test_delay_presentation_create on public.product_presentations;
 create trigger petstock_test_delay_presentation_create before insert on public.product_presentations
 for each row execute function petstock_test.delay_presentation_create();
+
+create or replace function petstock_test.delay_min_stock_update() returns trigger language plpgsql as $$
+begin
+  if current_setting('application_name', true) = 'petstock_min_update'
+     and new.id = '20000000-0000-4000-8000-000000000030'
+  then perform pg_sleep(1.5); end if;
+  return new;
+end $$;
+drop trigger if exists petstock_test_delay_min_stock_update on public.product_presentations;
+create trigger petstock_test_delay_min_stock_update before update of min_stock on public.product_presentations
+for each row execute function petstock_test.delay_min_stock_update();

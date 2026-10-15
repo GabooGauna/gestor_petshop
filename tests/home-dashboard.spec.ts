@@ -33,8 +33,20 @@ test.describe('Inicio — resumen analítico', () => {
     await expect(sales).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('alerta por presentación antes de que el stock se agote', async ({ page }) => {
+  test('respeta mínimos independientes de 0 a 5 y superiores sin piso preventivo', async ({ page }) => {
     const unitProduct = mockCatalog.products[1];
+    const basePresentation = unitProduct.product_presentations[0];
+    const variants = [
+      { id: '20000000-0000-4000-8000-000000000000', name: 'Mínimo cero disponible', stock: 1, min_stock: 0, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000001', name: 'Mínimo cero agotada', stock: 0, min_stock: 0, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000002', name: 'Mínimo uno', stock: 1, min_stock: 1, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000003', name: 'Mínimo dos disponible', stock: 3, min_stock: 2, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000004', name: 'Mínimo tres', stock: 3, min_stock: 3, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000005', name: 'Mínimo cuatro disponible', stock: 5, min_stock: 4, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000006', name: 'Mínimo cinco', stock: 4, min_stock: 5, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000007', name: 'Mínimo ocho', stock: 8, min_stock: 8, status: 'active' },
+      { id: '20000000-0000-4000-8000-000000000008', name: 'Archivada agotada', stock: 0, min_stock: 10, status: 'inactive' },
+    ].map(variant => ({ ...basePresentation, ...variant }));
     await page.route('**/rest/v1/products*', route => route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -42,21 +54,7 @@ test.describe('Inicio — resumen analítico', () => {
         product.id === unitProduct.id
           ? {
               ...product,
-              product_presentations: [
-                product.product_presentations[0],
-                {
-                  ...product.product_presentations[0],
-                  id: '20202020-2020-4020-8020-202020202020',
-                  name: 'Mediana',
-                  stock: 0,
-                },
-                {
-                  ...product.product_presentations[0],
-                  id: '21212121-2121-4121-8121-212121212121',
-                  name: 'Corta',
-                  stock: 4,
-                },
-              ],
+              product_presentations: variants,
             }
           : product
       ))),
@@ -64,15 +62,24 @@ test.describe('Inicio — resumen analítico', () => {
     await page.reload();
 
     const panel = page.getByTestId('low-stock-panel');
-    await expect(panel).toContainText('2');
+    await expect(panel).toContainText('5');
     await expect(panel).toContainText('Correa QA');
-    await expect(panel).toContainText('Mediana · Reponer desde 5 uds');
-    await expect(panel).toContainText('0 uds');
+    await expect(panel).toContainText('Mínimo cero agotada');
+    await expect(panel).toContainText('Disponible: 0 uds · Mínimo: 0 uds');
     await expect(panel).toContainText('Agotado');
-    await expect(panel).toContainText('Corta · Reponer desde 5 uds');
-    await expect(panel).toContainText('4 uds');
+    await expect(panel).toContainText('Mínimo uno');
+    await expect(panel).toContainText('Mínimo tres');
+    await expect(panel).toContainText('Mínimo cinco');
+    await expect(panel).toContainText('Mínimo ocho');
     await expect(panel).toContainText('Queda poco');
-    await expect(panel).not.toContainText('Unidad · Reponer');
+    await expect(panel).not.toContainText('Mínimo cero disponible');
+    await expect(panel).not.toContainText('Mínimo dos disponible');
+    await expect(panel).not.toContainText('Mínimo cuatro disponible');
+    await expect(panel).not.toContainText('Archivada agotada');
+
+    await panel.getByRole('button', { name: `Abrir producto ${unitProduct.name}` }).first().click();
+    await expect(page.getByTestId(`product-row-${unitProduct.id}`)).toBeVisible();
+    await expect(page.getByTestId(`presentation-${variants[1].id}`)).toBeVisible();
   });
 
   test('permite navegar desde Inicio a las tareas frecuentes', async ({ page }) => {

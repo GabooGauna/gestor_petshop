@@ -9,6 +9,7 @@ import {
   PackageCheck,
 } from "lucide-react";
 import type { Database } from "../types/database.types";
+import { validateMinimumStock } from "../lib/stockAlerts";
 
 type Category = Database["public"]["Tables"]["categories"]["Row"];
 
@@ -40,6 +41,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
   const [priceBulk, setPriceBulk] = useState("");
   const [margenPct, setMargenPct] = useState("10");
   const [initialStock, setInitialStock] = useState("0");
+  const [minimumStock, setMinimumStock] = useState("0");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +126,12 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
 
     const costNum = Number(cost) || 0;
     const priceNum = Number(priceBulk) || 0;
+    const minimumStockNum = Number(minimumStock);
+    const minimumError = validateMinimumStock(minimumStockNum, type);
+    if (minimumError) {
+      setError(minimumError);
+      return;
+    }
     const weightNum = type === "weight" ? Number(weightKg) || 0 : null;
     const calculatedPricePerKg =
       type === "weight" && weightNum && priceNum
@@ -145,6 +153,7 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
           price: priceNum,
           price_per_kg: calculatedPricePerKg,
           initialStock: initialStock as `${number}`,
+          min_stock: minimumStockNum,
         },
       });
 
@@ -475,6 +484,26 @@ export function ProductForm({ onProductAdded, onCancel }: ProductFormProps) {
               )}
             </>
           )}
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+            <label htmlFor="presentation-min-stock" className="block text-xs font-semibold text-amber-900">
+              Stock mínimo para reposición ({type === "weight" ? "kg" : "uds"})
+            </label>
+            <input
+              id="presentation-min-stock"
+              required
+              type="number"
+              min="0"
+              step={type === "weight" ? "0.001" : "1"}
+              value={minimumStock}
+              onChange={(e) => setMinimumStock(e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500 sm:max-w-48"
+              data-testid="presentation-min-stock-input"
+            />
+            <p className="mt-1.5 text-[11px] leading-4 text-amber-800">
+              Home avisará cuando el stock sea igual o menor. Con 0, sólo avisará al agotarse.
+            </p>
+          </div>
         </div>
 
         {/* Botones de acción */}

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { inventoryService } from '../services/inventoryService';
 import type { InventoryMovement, StockMutationResult } from '../services/inventoryService';
 import { formatMovementReason } from '../lib/reportFormatting';
+import { formatStockQuantity, isLowStock, isOutOfStock, stockUnit } from '../lib/stockAlerts';
 import {
   AlertTriangle, ArrowDownCircle, ArrowUpCircle, BarChart2,
   CheckCircle, ChevronLeft, ChevronRight, ClipboardList, RefreshCw, X,
@@ -14,6 +15,7 @@ interface Presentation {
   weight_kg: number | null;
   product_id: string | null;
   status: string;
+  min_stock: number;
 }
 
 interface Product {
@@ -83,6 +85,7 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
   const selectedPres = selectedProduct?.product_presentations.find(p => p.id === form.presentationId);
   const isWeightProduct = selectedProduct?.type === 'weight';
   const effectiveReason = form.reason === 'Otro' ? customReason : form.reason;
+  const stockType = isWeightProduct ? 'weight' as const : 'unit' as const;
 
   const set = (key: keyof ShrinkageFormState, value: string) =>
     setForm(prev => ({ ...prev, [key]: value }));
@@ -156,7 +159,7 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
             <option value="">Seleccionar presentación…</option>
             {selectedProduct?.product_presentations.map(p => (
               <option key={p.id} value={p.id}>
-                {p.name} (stock: {Number(p.stock).toLocaleString('es-AR')} {isWeightProduct ? 'kg' : 'uds'})
+                {p.name} (stock: {formatStockQuantity(p.stock, stockType)} · mín: {formatStockQuantity(p.min_stock, stockType)} {stockUnit(stockType)})
               </option>
             ))}
           </select>
@@ -182,8 +185,9 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
           data-testid="shrinkage-quantity-input"
         />
         {selectedPres && (
-          <p className="text-xs text-slate-400 mt-1">
-            Stock actual: {Number(selectedPres.stock).toLocaleString('es-AR')} {isWeightProduct ? 'kg' : 'uds'}
+          <p className={`mt-1 text-xs font-medium ${isLowStock(selectedPres.stock, selectedPres.min_stock, selectedPres.status) ? (isOutOfStock(selectedPres.stock) ? 'text-red-600' : 'text-amber-700') : 'text-slate-500'}`} data-testid="shrinkage-stock-status">
+            Stock actual: {formatStockQuantity(selectedPres.stock, stockType)} {stockUnit(stockType)} · Mínimo: {formatStockQuantity(selectedPres.min_stock, stockType)} {stockUnit(stockType)}
+            {isLowStock(selectedPres.stock, selectedPres.min_stock, selectedPres.status) ? (isOutOfStock(selectedPres.stock) ? ' · Agotado' : ' · Stock bajo') : ' · Stock en orden'}
           </p>
         )}
       </div>
@@ -264,6 +268,7 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
   const systemStock = selectedPres ? Number(selectedPres.stock) : null;
   const physNum = physicalStock !== '' ? Number(physicalStock) : null;
   const delta = systemStock != null && physNum != null ? physNum - systemStock : null;
+  const stockType = isWeightProduct ? 'weight' as const : 'unit' as const;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -326,7 +331,7 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
           >
             <option value="">Seleccionar presentación…</option>
             {selectedProduct?.product_presentations.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id}>{p.name} (stock: {formatStockQuantity(p.stock, stockType)} · mín: {formatStockQuantity(p.min_stock, stockType)} {stockUnit(stockType)})</option>
             ))}
           </select>
         </div>
@@ -340,6 +345,9 @@ function AdjustmentForm({ products, onSuccess }: AdjustmentFormProps) {
             <div className="text-lg font-bold text-slate-700">
               {systemStock?.toLocaleString('es-AR')}
               <span className="text-xs font-normal text-slate-400 ml-1">{isWeightProduct ? 'kg' : 'uds'}</span>
+            </div>
+            <div className={`mt-1 text-[11px] font-semibold ${isLowStock(systemStock, selectedPres.min_stock, selectedPres.status) ? (isOutOfStock(systemStock) ? 'text-red-600' : 'text-amber-700') : 'text-emerald-700'}`} data-testid="adjustment-stock-status">
+              Mínimo {formatStockQuantity(selectedPres.min_stock, stockType)} {stockUnit(stockType)} · {isLowStock(systemStock, selectedPres.min_stock, selectedPres.status) ? (isOutOfStock(systemStock) ? 'Agotado' : 'Stock bajo') : 'Stock en orden'}
             </div>
           </div>
           <div className="bg-white rounded-lg p-3 text-center border-2 border-amber-300">

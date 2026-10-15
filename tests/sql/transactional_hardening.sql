@@ -217,11 +217,13 @@ begin
     or jsonb_typeof(v->'price') <> 'string'
     or jsonb_typeof(v->'price_per_kg') <> 'string'
     or jsonb_typeof(v->'stock') <> 'string'
+    or jsonb_typeof(v->'min_stock') <> 'string'
     or v->>'weight_kg' <> '5.000'
     or v->>'cost' <> '6250.00'
     or v->>'price' <> '9000.00'
     or v->>'price_per_kg' <> '1800.00'
     or v->>'stock' <> '2.500'
+    or v->>'min_stock' <> '5.000'
   then raise exception 'ASSERT_PRESENTATION_DECIMAL_RESPONSE: %', v; end if;
 
   if (select stock from public.product_presentations where id = v_presentation_id) <> 2.500

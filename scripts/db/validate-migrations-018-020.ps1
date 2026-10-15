@@ -4,6 +4,7 @@ param(
   [string]$BaselinePath,
   [switch]$SyntheticPre001,
   [switch]$Current022,
+  [switch]$Current023,
   [string]$Psql = 'psql',
   [string]$DockerContainer
 )
@@ -14,8 +15,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if ($Connection -match '(?i)postgres(?:ql)?://[^/@:]+:[^/@]+@' -or $Connection -match '(?i)(^|\s)password=') {
   throw 'Do not put passwords in -Connection. Use a temporary PGPASSFILE or an interactive prompt.'
 }
-if ($SyntheticPre001 -and $Current022) {
-  throw 'Do not combine -SyntheticPre001 with -Current022.'
+if (@($SyntheticPre001, $Current022, $Current023).Where({ $_ }).Count -gt 1) {
+  throw 'Use only one baseline mode: -SyntheticPre001, -Current022 or -Current023.'
 }
 if ($SyntheticPre001) {
   if ($BaselinePath) { throw 'Do not combine -SyntheticPre001 with -BaselinePath.' }
@@ -139,17 +140,17 @@ if ($existingRun.Process.ExitCode -ne 0 -or $existing -ne '0') {
 $baselineResolved = (Resolve-Path -LiteralPath $BaselinePath).Path
 $baseline = [IO.File]::ReadAllText($baselineResolved)
 $baselineHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $baselineResolved).Hash.ToLowerInvariant()
-if (-not $SyntheticPre001 -and -not $Current022 -and $baseline -match '(?im)^\s*(copy\s+|insert\s+into\s+)') {
+if (-not $SyntheticPre001 -and -not $Current022 -and -not $Current023 -and $baseline -match '(?im)^\s*(copy\s+|insert\s+into\s+)') {
   throw 'Baseline contains data statements. Supply a reviewed plain-text schema-only SQL dump through migration 017.'
 }
-if ($Current022 -and $baselineResolved.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+if (($Current022 -or $Current023) -and $baselineResolved.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
   throw 'The current production-derived backup must remain outside the repository.'
 }
 if ($baseline -match '(?im)CREATE\s+TABLE\s+(auth|storage)\.' -or
     $baseline -match '(?im)sb_secret_|postgres(?:ql)?://\S+:\S+@|password\s*=') {
   throw 'Baseline contains a managed-schema object or possible secret.'
 }
-Write-Host $(if ($SyntheticPre001) { 'Restoring synthetic pre-001 test fixture...' } elseif ($Current022) { 'Restoring reviewed current public backup with data...' } else { 'Restoring reviewed schema-only baseline 017...' })
+Write-Host $(if ($SyntheticPre001) { 'Restoring synthetic pre-001 test fixture...' } elseif ($Current022 -or $Current023) { 'Restoring reviewed current public backup with data...' } else { 'Restoring reviewed schema-only baseline 017...' })
 Invoke-PsqlInput $baseline 'baseline restore'
 
 if ($SyntheticPre001) {
@@ -183,6 +184,8 @@ end
 }
 if ($Current022) {
   Invoke-PsqlFile 'tests/sql/production_preflight_022.sql' 'current 020/021 schema preflight for 022'
+} elseif ($Current023) {
+  Invoke-PsqlFile 'tests/sql/production_preflight_023.sql' 'current 020/021/022 schema preflight for 023'
 } else {
   Invoke-PsqlFile 'tests/sql/preflight_017.sql' 'baseline 017 preflight'
 }
@@ -192,21 +195,28 @@ create schema if not exists petstock_test;
 create table if not exists petstock_test.migration_history(
   version text primary key, sha256 text not null, applied_at timestamptz not null default clock_timestamp()
 );
-insert into petstock_test.migration_history(version,sha256) values('$(if ($Current022) { 'baseline_current_021' } else { 'baseline_017' })','$baselineHash');
+insert into petstock_test.migration_history(version,sha256) values('$(if ($Current023) { 'baseline_current_022' } elseif ($Current022) { 'baseline_current_021' } else { 'baseline_017' })','$baselineHash');
 "@
 Invoke-PsqlInput $meta 'create isolated migration history'
 
-$migrations = if ($Current022) { @(
-  @{ Version='022'; File='supabase/migrations/202610120022_logical_presentation_lifecycle.sql'; Post='tests/sql/postconditions_022.sql' }
+$migrations = if ($Current023) { @(
+  @{ Version='023'; File='supabase/migrations/202610150023_configurable_presentation_min_stock.sql'; Post='tests/sql/postconditions_023.sql' }
+) } elseif ($Current022) { @(
+  @{ Version='022'; File='supabase/migrations/202610120022_logical_presentation_lifecycle.sql'; Post='tests/sql/postconditions_022.sql' },
+  @{ Version='023'; File='supabase/migrations/202610150023_configurable_presentation_min_stock.sql'; Post='tests/sql/postconditions_023.sql' }
 ) } else { @(
   @{ Version='018'; File='supabase/migrations/202610110018_decimal_presentation_response.sql'; Post='tests/sql/postconditions_018.sql' },
   @{ Version='019'; File='supabase/migrations/202610110019_logical_product_removal.sql'; Post='tests/sql/postconditions_019.sql' },
   @{ Version='020'; File='supabase/migrations/202610110020_last_purchase_cost_snapshot.sql'; Post='tests/sql/postconditions_020.sql' },
   @{ Version='021'; File='supabase/migrations/202610120021_reconcile_historical_transaction_hardening.sql'; Post='tests/sql/postconditions_021.sql' },
-  @{ Version='022'; File='supabase/migrations/202610120022_logical_presentation_lifecycle.sql'; Post='tests/sql/postconditions_022.sql' }
+  @{ Version='022'; File='supabase/migrations/202610120022_logical_presentation_lifecycle.sql'; Post='tests/sql/postconditions_022.sql' },
+  @{ Version='023'; File='supabase/migrations/202610150023_configurable_presentation_min_stock.sql'; Post='tests/sql/postconditions_023.sql' }
 ) }
 if ($Current022) {
   Invoke-PsqlFile 'tests/sql/current_022_preservation_setup.sql' 'capture current data preservation snapshot'
+} elseif ($Current023) {
+  Invoke-PsqlFile 'tests/sql/current_023_preservation_setup.sql' 'capture current 022 data preservation snapshot'
+  Invoke-PsqlInput "select row_to_json(s) from petstock_test.current_023_snapshot s;" 'current 022 backup fingerprint'
 }
 foreach ($migration in $migrations) {
   $migrationPath = Join-Path $repoRoot $migration.File
@@ -224,10 +234,14 @@ foreach ($migration in $migrations) {
 if ($Current022) {
   Invoke-PsqlFile 'tests/sql/current_022_preservation_verify.sql' 'verify current data preservation after 022'
   Invoke-PsqlFile 'tests/sql/production_postdeploy_022.sql' 'production postdeploy contracts for 022'
+} elseif ($Current023) {
+  Invoke-PsqlFile 'tests/sql/current_023_preservation_verify.sql' 'verify current data preservation and minimum backfill after 023'
+  Invoke-PsqlFile 'tests/sql/production_postdeploy_023.sql' 'production postdeploy contracts for 023'
 }
 
 Invoke-PsqlFile 'tests/sql/transactional_hardening.sql' 'transactional contract suite'
 Invoke-PsqlFile 'tests/sql/presentation_lifecycle_contract.sql' 'presentation lifecycle contract suite'
+Invoke-PsqlFile 'tests/sql/configurable_min_stock_contract.sql' 'configurable minimum stock contract suite'
 Invoke-PsqlFile 'tests/sql/concurrency_setup.sql' 'concurrency fixtures'
 
 $auth = "select set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000099',false);"
@@ -262,6 +276,14 @@ $purchase = Start-PsqlInput $purchaseSql
 Start-Sleep -Milliseconds 250
 $sale = Start-PsqlInput (SaleWorker 'purchase_sale' 'sale' '[{"presentation_id":"20000000-0000-4000-8000-000000000022","mode":"unit","quantity":"1"}]')
 Complete-Psql $purchase 'purchase/sale purchase'; Complete-Psql $sale 'purchase/sale sale'
+
+$minUpdateSql = "set application_name='petstock_min_update'; $auth set role authenticated; do `$`$ declare v_started timestamptz := clock_timestamp(); begin update public.product_presentations set min_stock=4 where id='20000000-0000-4000-8000-000000000030'; insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('minimum_purchase','minimum','ok',extract(epoch from clock_timestamp()-v_started)*1000); end `$`$;"
+$minimumPurchaseSql = "$auth set role authenticated; do `$`$ declare v_started timestamptz := clock_timestamp(); begin perform public.process_purchase('20000000-0000-4000-8000-000000000010','MINIMUM-PURCHASE-RACE','[{`"presentation_id`":`"20000000-0000-4000-8000-000000000030`",`"quantity`":`"2`",`"unit_cost`":`"12.00`"}]'::jsonb); insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('minimum_purchase','purchase','ok',extract(epoch from clock_timestamp()-v_started)*1000); end `$`$;"
+$minimumUpdate = Start-PsqlInput $minUpdateSql
+Wait-ForWorkerSleep 'petstock_min_update'
+$minimumPurchase = Start-PsqlInput $minimumPurchaseSql
+Complete-Psql $minimumUpdate 'minimum/purchase threshold update'
+Complete-Psql $minimumPurchase 'minimum/purchase purchase'
 
 $archiveSql = "set application_name='petstock_archive_shrink'; $auth set role authenticated; do `$`$ declare v_started timestamptz := clock_timestamp(); begin perform public.delete_product('20000000-0000-4000-8000-000000000003'); insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('archive_mutation','archive','ok',extract(epoch from clock_timestamp()-v_started)*1000); end `$`$;"
 $mutationSql = "$auth set role authenticated; do `$`$ declare v_started timestamptz := clock_timestamp(); begin begin perform public.record_shrinkage('20000000-0000-4000-8000-000000000023',1,'race'); insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('archive_mutation','mutation','ok',extract(epoch from clock_timestamp()-v_started)*1000); exception when raise_exception then insert into petstock_test.outcomes(scenario,worker,outcome,duration_ms) values('archive_mutation','mutation',sqlerrm,extract(epoch from clock_timestamp()-v_started)*1000); end; end `$`$;"
@@ -351,4 +373,4 @@ Complete-Psql $archiveLoser 'presentation sale-wins archive'
 Invoke-PsqlFile 'tests/sql/presentation_lifecycle_concurrency_verify.sql' 'presentation lifecycle concurrency postconditions'
 
 Invoke-PsqlInput "table petstock_test.migration_history order by applied_at;" 'migration history'
-Write-Host $(if ($Current022) { 'PASS: current 020/021 backup plus migration 022, preservation, lifecycle and concurrency contracts.' } else { 'PASS: baseline 017 plus migrations 018-022, lifecycle, transactional and concurrent backend contracts.' })
+Write-Host $(if ($Current023) { 'PASS: current 020/021/022 backup plus migration 023, preservation, lifecycle, minimum-stock and concurrency contracts.' } elseif ($Current022) { 'PASS: current 020/021 backup plus migrations 022-023, preservation, lifecycle, minimum-stock and concurrency contracts.' } else { 'PASS: baseline 017 plus migrations 018-023, lifecycle, minimum-stock, transactional and concurrent backend contracts.' })

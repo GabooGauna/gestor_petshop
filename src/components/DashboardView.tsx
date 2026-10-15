@@ -11,6 +11,7 @@ import { formatShortDate, formatTimestamp, getRecentRange } from '../lib/reportD
 import { compactCurrency, formatMoney, paymentLabels, reportLongDate } from '../lib/reportFormatting';
 import { reportService, type DashboardAnalytics, type ReportDateRange } from '../services/reportService';
 import type { Database } from '../types/database.types';
+import { formatStockQuantity, isLowStock, isOutOfStock } from '../lib/stockAlerts';
 
 type DashboardProduct = Database['public']['Tables']['products']['Row'] & {
   product_presentations: Database['public']['Tables']['product_presentations']['Row'][];
@@ -19,6 +20,7 @@ type DashboardProduct = Database['public']['Tables']['products']['Row'] & {
 interface DashboardViewProps {
   products: DashboardProduct[];
   onOpenProducts: () => void;
+  onOpenProduct: (productId: string) => void;
   onOpenPurchase: () => void;
   onOpenSale: () => void;
 }
@@ -28,12 +30,9 @@ function getCatalogLowStock(products: DashboardProduct[]): DashboardAnalytics['l
     .filter(product => product.status === 'active')
     .flatMap(product => {
       const productType: 'weight' | 'unit' = product.type === 'weight' ? 'weight' : 'unit';
-      const configuredMinimum = Number(product.min_stock);
-      const restockThreshold = Math.max(Number.isFinite(configuredMinimum) ? configuredMinimum : 0, 5);
-
       return product.product_presentations
         .filter(presentation => presentation.status === 'active')
-        .filter(presentation => Number(presentation.stock) <= restockThreshold)
+        .filter(presentation => isLowStock(presentation.stock, presentation.min_stock, presentation.status))
         .map(presentation => ({
           product_id: product.id,
           product_name: product.name,
@@ -41,7 +40,7 @@ function getCatalogLowStock(products: DashboardProduct[]): DashboardAnalytics['l
           presentation_name: presentation.name,
           product_type: productType,
           current_stock: Number(presentation.stock).toFixed(3) as `${number}`,
-          min_stock: restockThreshold.toFixed(3) as `${number}`,
+          min_stock: Number(presentation.min_stock).toFixed(3) as `${number}`,
           unit: productType === 'weight' ? 'kg' as const : 'uds' as const,
         }));
     })
@@ -157,7 +156,7 @@ function DashboardSkeleton() {
   );
 }
 
-export function DashboardView({ products, onOpenProducts, onOpenPurchase, onOpenSale }: DashboardViewProps) {
+export function DashboardView({ products, onOpenProducts, onOpenProduct, onOpenPurchase, onOpenSale }: DashboardViewProps) {
   const [range, setRange] = useState<ReportDateRange>(() => getRecentRange(7));
   const [data, setData] = useState<DashboardAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -268,21 +267,22 @@ export function DashboardView({ products, onOpenProducts, onOpenPurchase, onOpen
           {lowStock.length === 0 ? (
             <div className="p-8 text-center"><PackageSearch className="mx-auto h-9 w-9 text-emerald-500" /><p className="mt-3 text-sm font-semibold text-slate-700">Stock en orden</p><p className="mt-1 text-xs text-slate-500">Ninguna presentación está próxima a agotarse.</p></div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {lowStock.slice(0, 6).map(item => {
+            <div className="max-h-[30rem] divide-y divide-slate-100 overflow-y-auto">
+              {lowStock.map(item => {
                 const currentStock = Number(item.current_stock);
-                const formatStock = (value: number) => value.toLocaleString('es-AR', {
-                  maximumFractionDigits: item.product_type === 'unit' ? 0 : 3,
-                });
-                const exhausted = currentStock <= 0;
+                const exhausted = isOutOfStock(currentStock);
                 return (
-                  <div key={item.presentation_id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                  <div key={item.presentation_id} className="flex items-center justify-between gap-3 px-5 py-3.5" data-testid={`low-stock-${item.presentation_id}`}>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-800">{item.product_name}</p>
-                      <p className="mt-0.5 truncate text-xs text-slate-500">{item.presentation_name} · Reponer desde {formatStock(Number(item.min_stock))} {item.unit}</p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">{item.presentation_name}</p>
+                      <p className="mt-1 text-[11px] text-slate-600">Disponible: {formatStockQuantity(currentStock, item.product_type)} {item.unit} · Mínimo: {formatStockQuantity(item.min_stock, item.product_type)} {item.unit}</p>
+                      <button type="button" onClick={() => onOpenProduct(item.product_id)} className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800" aria-label={`Abrir producto ${item.product_name}`}>
+                        Abrir producto <ArrowRight className="h-3 w-3" />
+                      </button>
                     </div>
                     <div className="shrink-0 text-right">
-                      <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-bold ${exhausted ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{formatStock(currentStock)} {item.unit}</span>
+                      <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-bold ${exhausted ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{formatStockQuantity(currentStock, item.product_type)} {item.unit}</span>
                       <p className={`mt-1 text-[11px] font-semibold ${exhausted ? 'text-red-600' : 'text-amber-600'}`}>{exhausted ? 'Agotado' : 'Queda poco'}</p>
                     </div>
                   </div>

@@ -27,23 +27,25 @@ test.describe('Inventario — mermas, ajustes y Kardex (backend simulado)', () =
         movement_id: '12121212-1212-4121-8121-121212121212',
         product_id: mockCatalog.products[0].id,
         presentation_id: mockCatalog.products[0].product_presentations[0].id,
-        quantity: '-0.500', stock_before: '200.000', stock_after: '199.500',
+        quantity: '-190.500', stock_before: '200.000', stock_after: '9.500',
       }) });
     });
     await page.getByTestId('shrinkage-product-select').selectOption(mockCatalog.products[0].id);
     await page.getByTestId('shrinkage-presentation-select').selectOption(mockCatalog.products[0].product_presentations[0].id);
-    await page.getByTestId('shrinkage-quantity-input').fill('0.5');
+    await page.getByTestId('shrinkage-quantity-input').fill('190.5');
     await page.getByRole('button', { name: 'Alimento vencido' }).click();
     await page.getByTestId('shrinkage-submit').click();
     await expect.poll(() => rpcBody).toBeTruthy();
     expect(rpcBody).toEqual({
       p_presentation_id: mockCatalog.products[0].product_presentations[0].id,
-      p_quantity: '0.5', p_reason: 'Alimento vencido',
+      p_quantity: '190.5', p_reason: 'Alimento vencido',
     });
     await expect(page.getByTestId('inventory-success')).toBeVisible();
 
     await page.getByTestId('shrinkage-product-select').selectOption(mockCatalog.products[0].id);
-    await expect(page.getByTestId('shrinkage-presentation-select')).toContainText('stock: 199,5 kg');
+    await expect(page.getByTestId('shrinkage-presentation-select')).toContainText('stock: 9,5 · mín: 10 kg');
+    await page.getByRole('button', { name: 'Inicio' }).click();
+    await expect(page.getByTestId(`low-stock-${mockCatalog.products[0].product_presentations[0].id}`)).toContainText('Disponible: 9,5 kg · Mínimo: 10 kg');
   });
 
   test('el ajuste envía stock físico, no un delta calculado por el navegador', async ({ page }) => {
@@ -54,24 +56,26 @@ test.describe('Inventario — mermas, ajustes y Kardex (backend simulado)', () =
         movement_id: '13131313-1313-4131-8131-131313131313',
         product_id: mockCatalog.products[0].id,
         presentation_id: mockCatalog.products[0].product_presentations[0].id,
-        quantity: '-1.500', stock_before: '200.000', stock_after: '198.500',
+        quantity: '-192.000', stock_before: '200.000', stock_after: '8.000',
       }) });
     });
     await page.getByTestId('tab-ajustes').click();
     await page.getByTestId('adjustment-product-select').selectOption(mockCatalog.products[0].id);
     await page.getByTestId('adjustment-presentation-select').selectOption(mockCatalog.products[0].product_presentations[0].id);
-    await page.getByTestId('adjustment-physical-input').fill('198.5');
+    await page.getByTestId('adjustment-physical-input').fill('8');
     await page.getByTestId('adjustment-reason-input').fill('Conteo QA');
     await page.getByTestId('adjustment-submit').click();
     await expect.poll(() => rpcBody).toBeTruthy();
     expect(rpcBody).toEqual({
       p_presentation_id: mockCatalog.products[0].product_presentations[0].id,
-      p_physical_stock: '198.5', p_reason: 'Conteo QA',
+      p_physical_stock: '8', p_reason: 'Conteo QA',
     });
 
     await page.getByTestId('adjustment-product-select').selectOption(mockCatalog.products[0].id);
     await page.getByTestId('adjustment-presentation-select').selectOption(mockCatalog.products[0].product_presentations[0].id);
-    await expect(page.getByText('Stock en sistema').locator('..')).toContainText('198,5');
+    await expect(page.getByText('Stock en sistema').locator('..')).toContainText('8');
+    await page.getByRole('button', { name: 'Inicio' }).click();
+    await expect(page.getByTestId(`low-stock-${mockCatalog.products[0].product_presentations[0].id}`)).toContainText('Disponible: 8 kg · Mínimo: 10 kg');
   });
 
   test('muestra diferencias de unidades sin decimales', async ({ page }) => {

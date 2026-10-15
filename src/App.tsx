@@ -88,6 +88,7 @@ function App() {
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
+  const [focusedProductId, setFocusedProductId] = useState<string | null>(null);
 
   useEffect(() => {
     applyTheme(theme);
@@ -133,8 +134,23 @@ function App() {
     )));
   };
 
-  const navigateTo = (view: View) => {
+  const handlePresentationUpdated = (
+    updatedPresentation?: Database['public']['Tables']['product_presentations']['Row'],
+  ) => {
+    if (updatedPresentation) {
+      setProducts(currentProducts => currentProducts.map(product => ({
+        ...product,
+        product_presentations: product.product_presentations.map(presentation => (
+          presentation.id === updatedPresentation.id ? updatedPresentation : presentation
+        )),
+      })));
+    }
+    handleRefresh();
+  };
+
+  const navigateTo = (view: View, productId: string | null = null) => {
     setCurrentView(view);
+    setFocusedProductId(view === 'productos' ? productId : null);
     setMobileNavOpen(false);
   };
 
@@ -362,6 +378,11 @@ function App() {
           <DashboardView
             products={products}
             onOpenProducts={() => navigateTo('productos')}
+            onOpenProduct={(productId) => {
+              setSearchTerm('');
+              setCategoryFilter('');
+              navigateTo('productos', productId);
+            }}
             onOpenPurchase={() => navigateTo('nueva_compra')}
             onOpenSale={() => navigateTo('pos')}
           />
@@ -542,7 +563,8 @@ function App() {
                           categoryName={categories.find((c) => c.id === p.category_id)?.name || '-'}
                           categories={categories}
                           idx={idx}
-                          onUpdated={handleRefresh}
+                          onUpdated={handlePresentationUpdated}
+                          initiallyExpanded={focusedProductId === p.id}
                         />
                       ))}
                     </tbody>

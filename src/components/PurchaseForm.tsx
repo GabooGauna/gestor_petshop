@@ -4,6 +4,7 @@ import { productService } from '../services/productService';
 import { supplierService } from '../services/supplierService';
 import { SupplierModal } from './SupplierModal';
 import type { Database } from '../types/database.types';
+import { validateMinimumStock } from '../lib/stockAlerts';
 import {
   ArrowLeft, Trash2, Plus, Truck, AlertCircle,
   Layers, Package, FileText, CheckCircle, Check, X
@@ -21,6 +22,7 @@ interface Presentation {
   stock: number;
   weight_kg: number | null;
   status: string;
+  min_stock: number;
 }
 
 interface Product {
@@ -112,6 +114,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
   const [newProdCost, setNewProdCost] = useState('');
   const [newProdPrice, setNewProdPrice] = useState('');
   const [newProdMargen, setNewProdMargen] = useState('10');
+  const [newProdMinStock, setNewProdMinStock] = useState('0');
   const [savingNewProduct, setSavingNewProduct] = useState(false);
   const [showNewProdCategoryInput, setShowNewProdCategoryInput] = useState(false);
   const [newProdCategoryName, setNewProdCategoryName] = useState('');
@@ -124,6 +127,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
   const [quickPresWeight, setQuickPresWeight] = useState('');
   const [quickPresCost, setQuickPresCost] = useState('');
   const [quickPresPrice, setQuickPresPrice] = useState('');
+  const [quickPresMinStock, setQuickPresMinStock] = useState('0');
   const [quickPresMargen] = useState('10');
   const [savingQuickPres, setSavingQuickPres] = useState(false);
 
@@ -230,8 +234,14 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
     e.preventDefault();
     if (!newProdName.trim() || !newProdCatId) return;
 
-    setSavingNewProduct(true);
     setNewProdModalError(null);
+    const minimumStock = Number(newProdMinStock);
+    const minimumError = validateMinimumStock(minimumStock, newProdType);
+    if (minimumError) {
+      setNewProdModalError(minimumError);
+      return;
+    }
+    setSavingNewProduct(true);
     try {
       const weightNum = newProdType === 'weight' ? Number(newProdWeight) || 0 : null;
       const costNum = Number(newProdCost) || 0;
@@ -252,6 +262,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
           cost: costNum,
           price: priceNum,
           price_per_kg: calculatedPricePerKg,
+          min_stock: minimumStock,
         },
       });
 
@@ -296,6 +307,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
       setNewProdName('');
       setNewProdCost('');
       setNewProdPrice('');
+      setNewProdMinStock('0');
     } catch (err: unknown) {
       setNewProdModalError(err instanceof Error ? err.message : 'No se pudo crear el producto.');
     } finally {
@@ -312,9 +324,16 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
     const targetProduct = products.find(p => p.id === row.productId);
     if (!targetProduct) return;
 
+    const isWeight = targetProduct.type === 'weight';
+    const minimumStock = Number(quickPresMinStock);
+    const minimumError = validateMinimumStock(minimumStock, isWeight ? 'weight' : 'unit');
+    if (minimumError) {
+      alert(minimumError);
+      return;
+    }
+
     setSavingQuickPres(true);
     try {
-      const isWeight = targetProduct.type === 'weight';
       const weightNum = isWeight ? Number(quickPresWeight) || 0 : null;
       const costNum = Number(quickPresCost) || 0;
       const priceNum = Number(quickPresPrice) || 0;
@@ -329,6 +348,8 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
         cost: costNum,
         price: priceNum,
         price_per_kg: pricePerKgCalc,
+        stock: 0,
+        min_stock: minimumStock,
       });
 
       // Recargar únicamente el catálogo operable. El filtro defensivo evita que
@@ -353,6 +374,7 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
       setQuickPresWeight('');
       setQuickPresCost('');
       setQuickPresPrice('');
+      setQuickPresMinStock('0');
     } catch (err: unknown) {
       alert('Error al crear presentación: ' + (err instanceof Error ? err.message : ''));
     } finally {
@@ -1093,6 +1115,24 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                     />
                   </div>
                 )}
+
+                <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                  <label htmlFor="purchase-new-prod-min-stock" className="block text-xs font-semibold text-amber-900">
+                    Stock mínimo ({newProdType === 'weight' ? 'kg' : 'uds'})
+                  </label>
+                  <input
+                    id="purchase-new-prod-min-stock"
+                    required
+                    type="number"
+                    min="0"
+                    step={newProdType === 'weight' ? '0.001' : '1'}
+                    value={newProdMinStock}
+                    onChange={e => setNewProdMinStock(e.target.value)}
+                    className="mt-1.5 w-full rounded-lg border border-amber-200 bg-white p-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                    data-testid="purchase-new-prod-min-stock"
+                  />
+                  <p className="mt-1 text-[11px] text-amber-800">Con 0, la alerta aparece sólo cuando se agota.</p>
+                </div>
               </div>
 
               <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-2 sm:flex-row sm:justify-end">
@@ -1173,6 +1213,24 @@ export function PurchaseForm({ onPurchaseAdded, onCancel }: PurchaseFormProps) {
                   />
                 </div>
               )}
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                <label htmlFor="purchase-quick-pres-min-stock" className="block text-xs font-semibold text-amber-900">
+                  Stock mínimo ({products.find(p => p.id === items[quickPresRowIndex]?.productId)?.type === 'weight' ? 'kg' : 'uds'})
+                </label>
+                <input
+                  id="purchase-quick-pres-min-stock"
+                  required
+                  type="number"
+                  min="0"
+                  step={products.find(p => p.id === items[quickPresRowIndex]?.productId)?.type === 'weight' ? '0.001' : '1'}
+                  value={quickPresMinStock}
+                  onChange={e => setQuickPresMinStock(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-amber-200 bg-white p-2 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                  data-testid="modal-quick-pres-min-stock"
+                />
+                <p className="mt-1 text-[11px] text-amber-800">La alerta se evalúa de forma independiente para esta presentación.</p>
+              </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>

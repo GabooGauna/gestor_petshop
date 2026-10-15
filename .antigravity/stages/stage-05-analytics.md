@@ -26,9 +26,9 @@ Secciones del PRD asociadas: 14, 20, 21 y 23.
   impuestos, comisiones ni gastos operativos.
 - Las variaciones comparan con el período inmediatamente anterior de igual cantidad
   de días; son `null` cuando el período anterior vale cero.
-- Stock bajo se evalúa por presentación de cada producto activo, con la regla exacta
-  `stock_presentacion <= umbral_reposicion`. El umbral respeta el mínimo configurado
-  del producto y usa un valor preventivo de 5 uds o 5 kg cuando ese mínimo es menor.
+- Stock bajo se evalúa por presentación activa de cada producto activo, con la regla
+  exacta `stock_presentacion <= minimo_presentacion`. Desde Stage 07 el umbral es el
+  valor persistido para esa presentación, admite cero y no aplica pisos preventivos.
   Así una variante agotada no queda oculta por el stock de otra presentación.
 - El dashboard deriva esta alerta del catálogo autenticado ya cargado por la aplicación
   y conserva `low_stock` del RPC como respaldo. Esto permite operar correctamente

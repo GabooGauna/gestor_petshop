@@ -138,7 +138,17 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
   test('actualiza el stock mostrado después de una venta exitosa', async ({ page }) => {
     const product = mockCatalog.products[1];
     const presentation = product.product_presentations[0];
-    await page.route('**/rest/v1/rpc/process_sale', route => route.fulfill({
+    let saleCompleted = false;
+    await page.route('**/rest/v1/products*', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockCatalog.products.map(item => item.id === product.id
+        ? { ...item, product_presentations: item.product_presentations.map(candidate => candidate.id === presentation.id ? { ...candidate, stock: saleCompleted ? 1 : candidate.stock } : candidate) }
+        : item)),
+    }));
+    await page.route('**/rest/v1/rpc/process_sale', route => {
+      saleCompleted = true;
+      return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
@@ -150,20 +160,21 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
           product_id: product.id,
           presentation_id: presentation.id,
           mode: 'unit',
-          commercial_quantity: '2',
-          stock_quantity: '2',
+          commercial_quantity: '14',
+          stock_quantity: '14',
           unit_price: '8000.00',
           subtotal: '16000.00',
           line_cost: '10000.00',
           replacement_cost_snapshot: '5000.00',
           presentation_weight_snapshot: null,
           cost_basis: 'last_purchase',
-          stock_after: '13',
+          stock_after: '1',
         }],
       }),
-    }));
+    });
+    });
     await selectProduct(page, product.name, presentation.name);
-    await page.getByTestId('pos-input-value').fill('2');
+    await page.getByTestId('pos-input-value').fill('14');
     await page.getByRole('button', { name: 'Agregar al ticket' }).click();
     await page.getByRole('button', { name: 'Cobrar ticket' }).click();
     await expect(page.getByRole('heading', { name: 'Venta cobrada' })).toBeVisible();
@@ -171,7 +182,9 @@ test.describe('POS — cuatro modalidades y medios de pago (backend simulado)', 
     await expect(page.getByText('El ticket está vacío')).toBeVisible();
 
     await selectProduct(page, product.name, presentation.name);
-    await expect(page.getByTestId('pos-available-stock')).toContainText('13 uds');
+    await expect(page.getByTestId('pos-available-stock')).toContainText('1 uds');
+    await page.getByRole('button', { name: 'Inicio' }).click();
+    await expect(page.getByTestId(`low-stock-${presentation.id}`)).toContainText('Disponible: 1 uds · Mínimo: 2 uds');
   });
 
   test('rechaza exceso de decimales y fracciones en unidad/bolsa', async ({ page }) => {

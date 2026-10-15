@@ -48,11 +48,21 @@ test.describe('Catálogo — edición de categoría', () => {
     const product = mockCatalog.products[0];
     const presentation = product.product_presentations[0];
     let patchBody: unknown;
+    let configuredMinimum = presentation.min_stock;
 
     await installMockBackend(page);
+    await page.unroute('**/rest/v1/products*');
+    await page.route('**/rest/v1/products*', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockCatalog.products.map(item => item.id === product.id
+        ? { ...item, product_presentations: item.product_presentations.map(candidate => candidate.id === presentation.id ? { ...candidate, min_stock: configuredMinimum } : candidate) }
+        : item)),
+    }));
     await page.route('**/rest/v1/product_presentations*', async route => {
       if (route.request().method() === 'PATCH') {
         patchBody = route.request().postDataJSON();
+        configuredMinimum = Number((patchBody as { min_stock?: number }).min_stock ?? configuredMinimum);
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -75,10 +85,36 @@ test.describe('Catálogo — edición de categoría', () => {
     await expect(currentCost.locator('input')).toHaveCount(0);
 
     await page.getByTestId(`edit-price-bulk-${presentation.id}`).fill('36000');
+    await page.getByTestId(`edit-min-stock-${presentation.id}`).fill('200.5');
     await page.getByTestId(`save-presentation-${presentation.id}`).click();
 
     await expect.poll(() => patchBody).toBeTruthy();
-    expect(patchBody).toMatchObject({ name: presentation.name, price: 36000, weight_kg: 20 });
+    expect(patchBody).toMatchObject({ name: presentation.name, price: 36000, weight_kg: 20, min_stock: 200.5 });
     expect(patchBody).not.toHaveProperty('cost');
+    await expect(page.getByTestId(`presentation-min-stock-${presentation.id}`)).toContainText('200,5 kg');
+
+    await page.getByRole('button', { name: 'Inicio' }).click();
+    await expect(page.getByTestId(`low-stock-${presentation.id}`)).toContainText('Mínimo: 200,5 kg');
+  });
+
+  test('rechaza mínimos fraccionarios para una presentación por unidad', async ({ page }) => {
+    const product = mockCatalog.products[1];
+    const presentation = product.product_presentations[0];
+    let patchRequests = 0;
+
+    await installMockBackend(page);
+    await page.route('**/rest/v1/product_presentations*', async route => {
+      if (route.request().method() === 'PATCH') patchRequests += 1;
+      await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+    });
+    await loginWithMockUser(page);
+    await page.getByRole('button', { name: 'Productos', exact: true }).click();
+    await page.getByTestId(`toggle-presentations-${product.id}`).click();
+    await page.getByRole('button', { name: `Editar presentación ${presentation.name}` }).click();
+    await page.getByTestId(`edit-min-stock-${presentation.id}`).fill('1.5');
+    await page.getByTestId(`save-presentation-${presentation.id}`).click();
+
+    await expect(page.getByRole('heading', { name: 'Revisá el stock mínimo' })).toBeVisible();
+    expect(patchRequests).toBe(0);
   });
 });

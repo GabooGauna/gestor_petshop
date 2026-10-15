@@ -6,7 +6,7 @@ type ProductInsert = Database['public']['Tables']['products']['Insert'];
 type ProductUpdate = Database['public']['Tables']['products']['Update'];
 type PresentationInsert = Database['public']['Tables']['product_presentations']['Insert'];
 type PresentationUpdate = Database['public']['Tables']['product_presentations']['Update'];
-export type CatalogPresentationUpdate = Pick<PresentationUpdate, 'name' | 'weight_kg' | 'price' | 'price_per_kg'>;
+export type CatalogPresentationUpdate = Pick<PresentationUpdate, 'name' | 'weight_kg' | 'price' | 'price_per_kg' | 'min_stock'>;
 type Category = Database['public']['Tables']['categories']['Row'];
 type MoneyRpcValue = `${number}`;
 
@@ -19,6 +19,7 @@ export type ProductServiceErrorCode =
   | 'INVALID_MIN_STOCK'
   | 'INVALID_INITIAL_STOCK'
   | 'INVALID_UNIT_STOCK'
+  | 'INVALID_UNIT_MIN_STOCK'
   | 'INVALID_PRICE'
   | 'PETSTOCK_WEIGHT_REQUIRED'
   | 'PETSTOCK_UNIT_PRESENTATION_HAS_WEIGHT_FIELDS'
@@ -61,6 +62,7 @@ const productErrorMessages: Record<ProductServiceErrorCode, string> = {
   INVALID_MIN_STOCK: 'El stock mínimo debe ser cero o un valor positivo con hasta tres decimales.',
   INVALID_INITIAL_STOCK: 'El stock inicial debe ser cero o un valor positivo con hasta tres decimales.',
   INVALID_UNIT_STOCK: 'El stock de productos por unidad debe ser un número entero.',
+  INVALID_UNIT_MIN_STOCK: 'El stock mínimo de productos por unidad debe ser un número entero.',
   INVALID_PRICE: 'Precio y costo deben ser valores positivos con hasta dos decimales.',
   PETSTOCK_WEIGHT_REQUIRED: 'Indicá un peso de bulto mayor que cero.',
   PETSTOCK_UNIT_PRESENTATION_HAS_WEIGHT_FIELDS: 'Los productos por unidad no pueden incluir peso ni precio por kilo.',
@@ -127,6 +129,7 @@ export interface CreatedPresentation {
   price: DecimalString;
   price_per_kg: DecimalString | null;
   stock: DecimalString;
+  min_stock: DecimalString;
   status: PresentationStatus;
   created_at: string | null;
 }
@@ -168,10 +171,11 @@ function parseCreatedPresentation(value: unknown): CreatedPresentation | null {
   const cost = normalizeDecimalResponse(row.cost);
   const price = normalizeDecimalResponse(row.price);
   const stock = normalizeDecimalResponse(row.stock);
+  const minStock = normalizeDecimalResponse(row.min_stock);
   const weight = row.weight_kg === null ? null : normalizeDecimalResponse(row.weight_kg);
   const pricePerKg = row.price_per_kg === null ? null : normalizeDecimalResponse(row.price_per_kg);
   if (typeof row.id !== 'string' || typeof row.product_id !== 'string' || typeof row.name !== 'string'
-    || cost === null || price === null || stock === null
+    || cost === null || price === null || stock === null || minStock === null
     || (row.weight_kg !== null && weight === null)
     || (row.price_per_kg !== null && pricePerKg === null)
     || (row.created_at !== null && typeof row.created_at !== 'string')
@@ -185,6 +189,7 @@ function parseCreatedPresentation(value: unknown): CreatedPresentation | null {
     price,
     price_per_kg: pricePerKg,
     stock,
+    min_stock: minStock,
     status: 'active',
     created_at: row.created_at,
   };
@@ -301,6 +306,7 @@ export const productService = {
       price: number;
       price_per_kg?: number | null;
       initialStock?: `${number}`;
+      min_stock: number;
     };
   }): Promise<CreatedProduct> {
     const cost = normalizeMoneyForRpc(params.presentation.cost);
@@ -313,7 +319,7 @@ export const productService = {
       p_brand: params.product.brand ?? null,
       p_category_id: params.product.category_id ?? null,
       p_type: params.product.type ?? 'unit',
-      p_min_stock: params.product.min_stock ?? 0,
+      p_min_stock: params.presentation.min_stock,
       p_presentation_name: params.presentation.name.trim() || 'Principal',
       p_weight_kg: params.presentation.weight_kg ?? null,
       p_cost: cost,
@@ -326,7 +332,7 @@ export const productService = {
     return data;
   },
 
-  async createPresentation(presentation: Pick<PresentationInsert, 'product_id' | 'name' | 'weight_kg' | 'cost' | 'price' | 'price_per_kg' | 'stock'>): Promise<CreatedPresentation> {
+  async createPresentation(presentation: Pick<PresentationInsert, 'product_id' | 'name' | 'weight_kg' | 'cost' | 'price' | 'price_per_kg' | 'stock' | 'min_stock'>): Promise<CreatedPresentation> {
     if (!presentation.product_id) throw new Error('Seleccioná un producto para la presentación.');
     const cost = normalizeMoneyForRpc(presentation.cost ?? 0);
     const price = normalizeMoneyForRpc(presentation.price ?? 0);
@@ -341,6 +347,7 @@ export const productService = {
       p_price: price,
       p_price_per_kg: pricePerKg,
       p_initial_stock: presentation.stock ?? 0,
+      p_min_stock: presentation.min_stock ?? 0,
     });
     if (error) throw serviceError(error, 'PRESENTATION_CREATION_FAILED');
     const created = parseCreatedPresentation(data);
@@ -354,6 +361,7 @@ export const productService = {
       ...(updates.weight_kg !== undefined && { weight_kg: updates.weight_kg }),
       ...(updates.price !== undefined && { price: updates.price }),
       ...(updates.price_per_kg !== undefined && { price_per_kg: updates.price_per_kg }),
+      ...(updates.min_stock !== undefined && { min_stock: updates.min_stock }),
     };
     const { data, error } = await supabase
       .from('product_presentations')

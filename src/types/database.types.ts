@@ -88,6 +88,7 @@ export type Database = {
           cost: number
           created_at: string | null
           id: string
+          min_stock: number
           name: string
           price: number
           price_per_kg: number | null
@@ -100,6 +101,7 @@ export type Database = {
           cost?: number
           created_at?: string | null
           id?: string
+          min_stock?: number
           name: string
           price?: number
           price_per_kg?: number | null
@@ -112,6 +114,7 @@ export type Database = {
           cost?: number
           created_at?: string | null
           id?: string
+          min_stock?: number
           name?: string
           price?: number
           price_per_kg?: number | null
@@ -388,6 +391,7 @@ export type Database = {
         Args: {
           p_cost: number | string
           p_initial_stock: number | string
+          p_min_stock: number | string
           p_name: string
           p_price: number | string
           p_price_per_kg: number | string | null

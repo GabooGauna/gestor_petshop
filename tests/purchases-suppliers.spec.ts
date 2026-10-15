@@ -20,6 +20,7 @@ async function fillWeightProductModal(page: Page): Promise<void> {
   await numberInputs.nth(1).fill('75000');
   await numberInputs.nth(2).fill('95000');
   await numberInputs.nth(3).fill('10');
+  await page.getByTestId('purchase-new-prod-min-stock').fill('4');
 }
 
 test('permite crear la primera categoría desde el alta de producto de una compra', async ({ page }) => {
@@ -68,6 +69,7 @@ test.describe('Compras v2 (backend simulado)', () => {
     let productRpcBody: unknown;
     let purchaseRpcBody: unknown;
     let productCreated = false;
+    let purchaseCompleted = false;
 
     const createdProduct = {
       id: createdProductId,
@@ -75,7 +77,7 @@ test.describe('Compras v2 (backend simulado)', () => {
       brand: null,
       category_id: mockCatalog.categories[0].id,
       type: 'weight',
-      min_stock: 0,
+      min_stock: 4,
       status: 'active',
       created_at: '2026-10-11T15:00:00Z',
       product_presentations: [{
@@ -87,6 +89,7 @@ test.describe('Compras v2 (backend simulado)', () => {
         price: 95000,
         price_per_kg: 4976.19,
         stock: 0,
+        min_stock: 4,
         status: 'active',
         created_at: '2026-10-11T15:00:00Z',
       }],
@@ -97,7 +100,16 @@ test.describe('Compras v2 (backend simulado)', () => {
     await page.route('**/rest/v1/products*', route => route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(productCreated ? [...mockCatalog.products, createdProduct] : mockCatalog.products),
+      body: JSON.stringify(productCreated ? [
+        ...mockCatalog.products,
+        {
+          ...createdProduct,
+          product_presentations: createdProduct.product_presentations.map(presentation => ({
+            ...presentation,
+            stock: purchaseCompleted ? 21 : presentation.stock,
+          })),
+        },
+      ] : mockCatalog.products),
     }));
     await page.route('**/rest/v1/rpc/create_product_with_presentation', async route => {
       productRpcBody = route.request().postDataJSON();
@@ -111,7 +123,7 @@ test.describe('Compras v2 (backend simulado)', () => {
           brand: null,
           category_id: createdProduct.category_id,
           type: 'weight',
-          min_stock: '0.000',
+          min_stock: '4.000',
           status: 'active',
           created_at: createdProduct.created_at,
           presentation_id: createdPresentationId,
@@ -120,6 +132,7 @@ test.describe('Compras v2 (backend simulado)', () => {
     });
     await page.route('**/rest/v1/rpc/process_purchase', async route => {
       purchaseRpcBody = route.request().postDataJSON();
+      purchaseCompleted = true;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -151,7 +164,7 @@ test.describe('Compras v2 (backend simulado)', () => {
       p_brand: null,
       p_category_id: mockCatalog.categories[0].id,
       p_type: 'weight',
-      p_min_stock: 0,
+      p_min_stock: 4,
       p_presentation_name: 'Bolsa 21kg',
       p_weight_kg: 21,
       p_cost: '75000.00',
@@ -182,6 +195,8 @@ test.describe('Compras v2 (backend simulado)', () => {
       }],
     });
     await expect(page.getByTestId('product-success-banner')).toContainText('Compra registrada y stock actualizado con éxito.');
+    await page.getByRole('button', { name: 'Inicio' }).click();
+    await expect(page.getByTestId(`low-stock-${createdPresentationId}`)).toHaveCount(0);
   });
 
   test('muestra un mensaje útil cuando Supabase rechaza el precio del producto', async ({ page }) => {
