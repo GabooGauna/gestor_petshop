@@ -190,9 +190,9 @@ function ShrinkageForm({ products, onSuccess }: ShrinkageFormProps) {
 
       {/* Motivo (obligatorio) */}
       <div>
-        <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+        <p className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
           Motivo <span className="text-red-500 font-bold">*</span>
-        </label>
+        </p>
         <div className="grid grid-cols-2 gap-2 mb-2">
           {SHRINKAGE_REASONS.map(r => (
             <button
